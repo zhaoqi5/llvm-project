@@ -58,6 +58,25 @@ test_addi_pcrel_lo12:
     addi.d $a0, $a0, %pc_lo12(named_data)
     .size test_addi_pcrel_lo12, .-test_addi_pcrel_lo12
 
+## Check R_LARCH_PCALA64_LO20 / R_LARCH_PCALA64_HI12 relocation of a local
+## symbol.
+
+# jitlink-check: decode_operand(test_lu32i_d_pcrel, 2)[19:0] = \
+# jitlink-check:   (named_data - test_lu32i_d_pcrel)[51:32]
+# jitlink-check: decode_operand(test_lu52i_d_pcrel, 2)[11:0] = \
+# jitlink-check:   (named_data - test_lu32i_d_pcrel)[63:52]
+    .globl test_lu32i_d_pcrel
+    .p2align 2
+test_lu32i_d_pcrel:
+    lu32i.d $a0, %pc64_lo20(named_data)
+    .size test_lu32i_d_pcrel, .-test_lu32i_d_pcrel
+
+    .globl test_lu52i_d_pcrel
+    .p2align 2
+test_lu52i_d_pcrel:
+    lu52i.d $a0, $a0, %pc64_hi12(named_data)
+    .size test_lu52i_d_pcrel, .-test_lu52i_d_pcrel
+
 ## Check that calls/jumps to external functions trigger the generation of stubs
 ## and GOT entries.
 

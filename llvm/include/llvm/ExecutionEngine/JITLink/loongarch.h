@@ -123,6 +123,32 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///
   PageOffset12,
 
+  /// The signed 20-bit delta from the fixup page to the page containing the
+  /// target. Only used for loongarch64 and when the code model is large.
+  /// Because in this case, offset is represented by 64-bit. Delta computed
+  /// here is 32 to 51 bits.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend - (Fixup & ~0xffffffff)) >> 32 : int20
+  ///
+  /// Notes:
+  ///   For LU32i_D fixups.
+  ///
+  Page64Lo20,
+
+  /// The signed 12-bit delta from the fixup page to the page containing the
+  /// target. Only used for loongarch64 and when the code model is large.
+  /// Because in this case, offset is represented by 64-bit. Delta computed
+  /// here is 52 to 63 bits.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + Addend - (Fixup & ~0xffffffff)) >> 52 : int12
+  ///
+  /// Notes:
+  ///   For LU52i_D fixups.
+  ///
+  Page64Hi12,
+
   /// A GOT entry getter/constructor, transformed to Page20 pointing at the GOT
   /// entry for the original target.
   ///
@@ -247,6 +273,35 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E) {
     uint32_t RawInstr = *(ulittle32_t *)FixupPtr;
     uint32_t Imm11_0 = TargetOffset << 10;
     *(ulittle32_t *)FixupPtr = RawInstr | Imm11_0;
+    break;
+  }
+  case Page64Lo20: {
+    uint64_t Target = TargetAddress + Addend;
+    uint64_t TargetPage = (Target + 0x80000000 +
+                           ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
+                          ~static_cast<uint64_t>(0xfff);
+    uint64_t PCPage = (FixupAddress - 8) & ~static_cast<uint64_t>(0xfff);
+
+    int64_t PageDelta = TargetPage - PCPage;
+
+    uint32_t RawInstr = *(little32_t *)FixupPtr;
+    uint32_t Imm51_32 = extractBits(PageDelta >> 32, /*Hi=*/19, /*Lo=*/0) << 5;
+    *(little32_t *)FixupPtr = RawInstr | Imm51_32;
+    break;
+  }
+  case Page64Hi12: {
+    uint64_t Target = TargetAddress + Addend;
+    uint64_t TargetPage = (Target + 0x80000000 +
+                           ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
+                          ~static_cast<uint64_t>(0xfff);
+    uint64_t PCPage = (FixupAddress - 12) & ~static_cast<uint64_t>(0xfff);
+
+    int64_t PageDelta = TargetPage - PCPage;
+
+    uint32_t RawInstr = *(little32_t *)FixupPtr;
+    uint32_t Imm63_52 = extractBits(PageDelta >> 32, /*Hi=*/31, /*Lo=*/20)
+                        << 10;
+    *(little32_t *)FixupPtr = RawInstr | Imm63_52;
     break;
   }
   default:

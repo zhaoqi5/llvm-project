@@ -64,6 +64,10 @@ private:
       return Page20;
     case ELF::R_LARCH_PCALA_LO12:
       return PageOffset12;
+    case ELF::R_LARCH_PCALA64_LO20:
+      return Page64Lo20;
+    case ELF::R_LARCH_PCALA64_HI12:
+      return Page64Hi12;
     case ELF::R_LARCH_GOT_PC_HI20:
       return RequestGOTAndTransformToPage20;
     case ELF::R_LARCH_GOT_PC_LO12:
