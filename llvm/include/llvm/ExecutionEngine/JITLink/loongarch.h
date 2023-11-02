@@ -184,6 +184,40 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///   NONE
   ///
   RequestGOTAndTransformToPageOffset12,
+
+  /// A GOT entry getter/constructor, transformed to Page64Lo20 pointing at
+  /// the GOT entry for the original target. Also only used for loongarch64 and
+  /// when the code model is large.
+  ///
+  /// Indicates that this edge should be transformed into a Page64Lo20
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToPage64Lo20,
+
+  /// A GOT entry getter/constructor, transformed to Page64Hi12 pointing at
+  /// the GOT entry for the original target. Also only used for loongarch64 and
+  /// when the code model is large.
+  ///
+  /// Indicates that this edge should be transformed into a Page64Hi12
+  /// targeting the GOT entry for the edge's current target, maintaining the
+  /// same addend. A GOT entry for the target should be created if one does not
+  /// already exist.
+  ///
+  /// Edges of this kind are usually handled by a GOT/PLT builder pass inserted
+  /// by default.
+  ///
+  /// Fixup expression:
+  ///   NONE
+  ///
+  RequestGOT64AndTransformToPage64Hi12,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
@@ -275,7 +309,8 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E) {
     *(ulittle32_t *)FixupPtr = RawInstr | Imm11_0;
     break;
   }
-  case Page64Lo20: {
+  case Page64Lo20:
+  case RequestGOT64AndTransformToPage64Lo20: {
     uint64_t Target = TargetAddress + Addend;
     uint64_t TargetPage = (Target + 0x80000000 +
                            ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
@@ -289,7 +324,8 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E) {
     *(little32_t *)FixupPtr = RawInstr | Imm51_32;
     break;
   }
-  case Page64Hi12: {
+  case Page64Hi12:
+  case RequestGOT64AndTransformToPage64Hi12: {
     uint64_t Target = TargetAddress + Addend;
     uint64_t TargetPage = (Target + 0x80000000 +
                            ((Target & 0x800) ? (0x1000 - 0x100000000) : 0)) &
@@ -381,6 +417,12 @@ public:
       break;
     case RequestGOTAndTransformToPageOffset12:
       KindToSet = PageOffset12;
+      break;
+    case RequestGOT64AndTransformToPage64Lo20:
+      KindToSet = Page64Lo20;
+      break;
+    case RequestGOT64AndTransformToPage64Hi12:
+      KindToSet = Page64Hi12;
       break;
     default:
       return false;

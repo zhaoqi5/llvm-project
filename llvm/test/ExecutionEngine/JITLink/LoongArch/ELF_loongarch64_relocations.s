@@ -122,6 +122,29 @@ test_gotoffset12_external:
     ld.d $a0, $a0, %got_pc_lo12(external_data)
     .size test_gotoffset12_external, .-test_gotoffset12_external
 
+## Check R_LARCH_GOT64_PC_LO20 / R_LARCH_GOT64_PC_HI12 handling with a
+## reference to an external symbol. Validate both the reference to the GOT
+## entry, and also the content of the GOT entry.
+
+# jitlink-check: *{8}(got_addr(elf_reloc.o, external_data)) = external_data
+# jitlink-check: decode_operand(test_gotpage64lo20_external, 2)[19:0] = \
+# jitlink-check:   (got_addr(elf_reloc.o, external_data)[51:32] - \
+# jitlink-check:      test_gotpage64lo20_external[51:32])[19:0]
+# jitlink-check: decode_operand(test_gotpage64hi12_external, 2)[11:0] = \
+# jitlink-check:   (got_addr(elf_reloc.o, external_data)[63:52] - \
+# jitlink-check:      test_gotpage64hi12_external[63:52])[11:0]
+    .globl test_gotpage64lo20_external
+    .p2align 2
+test_gotpage64lo20_external:
+    lu32i.d $a0, %got64_pc_lo20(external_data)
+    .size test_gotpage64lo20_external, .-test_gotpage64lo20_external
+
+    .globl test_gotpage64hi12_external
+    .p2align 2
+test_gotpage64hi12_external:
+    lu52i.d $a0, $a0, %got64_pc_hi12(external_data)
+    .size test_gotpage64hi12_external, .-test_gotpage64hi12_external
+
 
     .globl named_data
     .p2align 4
