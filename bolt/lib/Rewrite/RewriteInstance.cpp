@@ -289,6 +289,11 @@ MCPlusBuilder *createMCPlusBuilder(const Triple::ArchType Arch,
     return createRISCVMCPlusBuilder(Analysis, Info, RegInfo, STI);
 #endif
 
+#ifdef LOONGARCH_AVAILABLE
+  if (Arch == Triple::loongarch64)
+    return createLoongArchMCPlusBuilder(Analysis, Info, RegInfo, STI);
+#endif
+
   llvm_unreachable("architecture unsupported by MCPlusBuilder");
 }
 
@@ -1557,6 +1562,51 @@ void RewriteInstance::disassemblePLTSectionAArch64(BinarySection &Section) {
   }
 }
 
+void RewriteInstance::disassemblePLTSectionLoongArch(BinarySection &Section) {
+  const uint64_t SectionAddress = Section.getAddress();
+  const uint64_t SectionSize = Section.getSize();
+  StringRef PLTContents = Section.getContents();
+  ArrayRef<uint8_t> PLTData(
+      reinterpret_cast<const uint8_t *>(PLTContents.data()), SectionSize);
+
+  auto disassembleInstruction = [&](uint64_t InstrOffset, MCInst &Instruction,
+                                    uint64_t &InstrSize) {
+    const uint64_t InstrAddr = SectionAddress + InstrOffset;
+    if (!BC->DisAsm->getInstruction(Instruction, InstrSize,
+                                    PLTData.slice(InstrOffset), InstrAddr,
+                                    nulls())) {
+      errs() << "BOLT-ERROR: unable to disassemble instruction in PLT section "
+             << Section.getName() << " at offset 0x"
+             << Twine::utohexstr(InstrOffset) << '\n';
+      exit(1);
+    }
+  };
+
+  // Skip the first special entry.
+  uint64_t InstrOffset = 32;
+
+  // Locate new plt entry
+  while (InstrOffset < SectionSize) {
+    InstructionListType Instructions;
+    MCInst Instruction;
+    const uint64_t EntryOffset = InstrOffset;
+    const uint64_t EntrySize = 16;
+    uint64_t InstrSize;
+
+    while (InstrOffset < EntryOffset + EntrySize) {
+      disassembleInstruction(InstrOffset, Instruction, InstrSize);
+      Instructions.emplace_back(Instruction);
+      InstrOffset += InstrSize;
+    }
+
+    const uint64_t EntryAddress = SectionAddress + EntryOffset;
+    const uint64_t TargetAddress = BC->MIB->analyzePLTEntry(
+        Instruction, Instructions.begin(), Instructions.end(), EntryAddress);
+
+    createPLTBinaryFunction(TargetAddress, EntryAddress, EntrySize);
+  }
+}
+
 void RewriteInstance::disassemblePLTSectionRISCV(BinarySection &Section) {
   const uint64_t SectionAddress = Section.getAddress();
   const uint64_t SectionSize = Section.getSize();
@@ -1645,6 +1695,8 @@ void RewriteInstance::disassemblePLT() {
   auto analyzeOnePLTSection = [&](BinarySection &Section, uint64_t EntrySize) {
     if (BC->isAArch64())
       return disassemblePLTSectionAArch64(Section);
+    if (BC->isLoongArch())
+      return disassemblePLTSectionLoongArch(Section);
     if (BC->isRISCV())
       return disassemblePLTSectionRISCV(Section);
     return disassemblePLTSectionX86(Section, EntrySize);
@@ -2104,6 +2156,7 @@ bool RewriteInstance::analyzeRelocation(
     return false;
 
   const bool IsAArch64 = BC->isAArch64();
+  const bool IsLoongArch = BC->isLoongArch();
 
   const size_t RelSize = Relocation::getSizeForType(RType);
 
@@ -2117,7 +2170,8 @@ bool RewriteInstance::analyzeRelocation(
   Addend = getRelocationAddend(InputFile, Rel);
 
   const bool IsPCRelative = Relocation::isPCRelative(RType);
-  const uint64_t PCRelOffset = IsPCRelative && !IsAArch64 ? Rel.getOffset() : 0;
+  const uint64_t PCRelOffset =
+      IsPCRelative && !IsAArch64 && !IsLoongArch ? Rel.getOffset() : 0;
   bool SkipVerification = false;
   auto SymbolIter = Rel.getSymbol();
   if (SymbolIter == InputFile->symbol_end()) {
@@ -2134,7 +2188,7 @@ bool RewriteInstance::analyzeRelocation(
     // Section symbols are marked as ST_Debug.
     IsSectionRelocation = (cantFail(Symbol.getType()) == SymbolRef::ST_Debug);
     // Check for PLT entry registered with symbol name
-    if (!SymbolAddress && (IsAArch64 || BC->isRISCV())) {
+    if (!SymbolAddress && (IsAArch64 || BC->isRISCV() || IsLoongArch)) {
       const BinaryData *BD = BC->getPLTBinaryDataByName(SymbolName);
       SymbolAddress = BD ? BD->getAddress() : 0;
     }
@@ -2197,7 +2251,7 @@ bool RewriteInstance::analyzeRelocation(
     if (SkipVerification)
       return true;
 
-    if (IsAArch64 || BC->isRISCV())
+    if (IsAArch64 || BC->isRISCV() || IsLoongArch)
       return true;
 
     if (SymbolName == "__hot_start" || SymbolName == "__hot_end")
@@ -2458,6 +2512,7 @@ void RewriteInstance::readRelocations(const SectionRef &Section) {
 void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
                                        const RelocationRef &Rel) {
   const bool IsAArch64 = BC->isAArch64();
+  const bool IsLoongArch = BC->isLoongArch();
   const bool IsFromCode = RelocatedSection.isText();
 
   SmallString<16> TypeName;
@@ -2576,7 +2631,8 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
   const bool IsToCode = ReferencedSection && ReferencedSection->isText();
 
   // Special handling of PC-relative relocations.
-  if (!IsAArch64 && !BC->isRISCV() && Relocation::isPCRelative(RType)) {
+  if (!IsAArch64 && !BC->isRISCV() && !IsLoongArch &&
+      Relocation::isPCRelative(RType)) {
     if (!IsFromCode && IsToCode) {
       // PC-relative relocations from data to code are tricky since the
       // original information is typically lost after linking, even with
@@ -2609,7 +2665,8 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
   }
 
   bool ForceRelocation = BC->forceSymbolRelocations(SymbolName);
-  if ((BC->isAArch64() || BC->isRISCV()) && Relocation::isGOT(RType))
+  if ((BC->isAArch64() || BC->isRISCV() || IsLoongArch) &&
+      Relocation::isGOT(RType))
     ForceRelocation = true;
 
   if (!ReferencedSection && !ForceRelocation) {
@@ -2776,7 +2833,7 @@ void RewriteInstance::handleRelocation(const SectionRef &RelocatedSection,
       // These are mostly local data symbols but undefined symbols
       // in relocation sections can get through here too, from .plt.
       assert(
-          (IsAArch64 || BC->isRISCV() || IsSectionRelocation ||
+          (IsAArch64 || BC->isRISCV() || IsLoongArch || IsSectionRelocation ||
            BC->getSectionNameForAddress(SymbolAddress)->starts_with(".plt")) &&
           "known symbols should not resolve to anonymous locals");
 

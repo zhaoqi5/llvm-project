@@ -793,6 +793,10 @@ public:
 
   bool isRISCV() const { return TheTriple->getArch() == llvm::Triple::riscv64; }
 
+  bool isLoongArch() const {
+    return TheTriple->getArch() == llvm::Triple::loongarch64;
+  }
+
   // AArch64-specific functions to check if symbol is used to delimit
   // code/data in .text. Code is marked by $x, data by $d.
   MarkerSymType getMarkerType(const SymbolRef &Symbol) const;

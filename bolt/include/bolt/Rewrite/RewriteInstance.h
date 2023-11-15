@@ -282,6 +282,9 @@ private:
   /// Disassemble riscv-specific .plt \p Section auxiliary function
   void disassemblePLTSectionRISCV(BinarySection &Section);
 
+  /// Disassemble loongarch-specific .plt \p Section auxiliary function
+  void disassemblePLTSectionLoongArch(BinarySection &Section);
+
   /// ELF-specific part. TODO: refactor into new class.
 #define ELF_FUNCTION(TYPE, FUNC)                                               \
   template <typename ELFT> TYPE FUNC(object::ELFObjectFile<ELFT> *Obj);        \
@@ -530,6 +533,9 @@ private:
   /// RISCV PLT sections.
   const PLTSectionInfo RISCV_PLTSections[2] = {{".plt"}, {nullptr}};
 
+  /// LoongArch PLT sections.
+  const PLTSectionInfo LoongArch_PLTSections[2] = {{".plt"}, {nullptr}};
+
   /// Return PLT information for a section with \p SectionName or nullptr
   /// if the section is not PLT.
   const PLTSectionInfo *getPLTSectionInfo(StringRef SectionName) {
@@ -545,6 +551,9 @@ private:
       break;
     case Triple::riscv64:
       PLTSI = RISCV_PLTSections;
+      break;
+    case Triple::loongarch64:
+      PLTSI = LoongArch_PLTSections;
       break;
     }
     for (; PLTSI && PLTSI->Name; ++PLTSI)

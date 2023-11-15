@@ -24,3 +24,7 @@ D: AArch64 backend
 N: Job Noorman
 E: jnoorman@igalia.com
 D: RISC-V backend
+
+N: Zhao Qi
+E: zhaoqi01@loongson.cn
+D: LoongArch backend

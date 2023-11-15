@@ -2111,6 +2111,11 @@ MCPlusBuilder *createRISCVMCPlusBuilder(const MCInstrAnalysis *,
                                         const MCRegisterInfo *,
                                         const MCSubtargetInfo *);
 
+MCPlusBuilder *createLoongArchMCPlusBuilder(const MCInstrAnalysis *,
+                                            const MCInstrInfo *,
+                                            const MCRegisterInfo *,
+                                            const MCSubtargetInfo *);
+
 } // namespace bolt
 } // namespace llvm
 

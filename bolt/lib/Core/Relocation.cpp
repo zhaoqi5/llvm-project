@@ -129,6 +129,21 @@ static bool isSupportedRISCV(uint64_t Type) {
   }
 }
 
+static bool isSupportedLoongArch(uint64_t Type) {
+  switch (Type) {
+  default:
+    return false;
+  case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCALA_LO12:
+  case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_GOT_PC_LO12:
+  case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT64_PC_LO20:
+  case ELF::R_LARCH_GOT64_PC_HI12:
+    return true;
+  }
+}
+
 static size_t getSizeForTypeX86(uint64_t Type) {
   switch (Type) {
   default:
@@ -234,6 +249,23 @@ static size_t getSizeForTypeRISCV(uint64_t Type) {
   }
 }
 
+static size_t getSizeForTypeLoongArch(uint64_t Type) {
+  switch (Type) {
+  default:
+    errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
+    llvm_unreachable("unsupported relocation type");
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCALA_LO12:
+  case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_GOT_PC_LO12:
+  case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT64_PC_LO20:
+  case ELF::R_LARCH_GOT64_PC_HI12:
+    return 4;
+  }
+}
+
 static bool skipRelocationTypeX86(uint64_t Type) {
   return Type == ELF::R_X86_64_NONE;
 }
@@ -250,6 +282,10 @@ static bool skipRelocationTypeRISCV(uint64_t Type) {
   case ELF::R_RISCV_RELAX:
     return true;
   }
+}
+
+static bool skipRelocationTypeLoongArch(uint64_t Type) {
+  return Type == ELF::R_LARCH_NONE;
 }
 
 static bool skipRelocationProcessX86(uint64_t &Type, uint64_t Contents) {
@@ -344,6 +380,10 @@ static bool skipRelocationProcessAArch64(uint64_t &Type, uint64_t Contents) {
 }
 
 static bool skipRelocationProcessRISCV(uint64_t &Type, uint64_t Contents) {
+  return false;
+}
+
+static bool skipRelocationProcessLoongArch(uint64_t &Type, uint64_t Contents) {
   return false;
 }
 
@@ -584,6 +624,44 @@ static uint64_t extractValueRISCV(uint64_t Type, uint64_t Contents,
   }
 }
 
+static uint64_t extractValueLoongArch(uint64_t Type, uint64_t Contents,
+                                      uint64_t PC) {
+  switch (Type) {
+  default:
+    errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
+    llvm_unreachable("unsupported relocation type");
+  case ELF::R_LARCH_B26: {
+    Contents &= ~0xfffffffffc000000ULL;
+    uint64_t LowBits = (Contents >> 10) & 0xffff;
+    uint64_t HighBits = Contents & 0x3ff;
+    Contents = LowBits | (HighBits << 16);
+    return static_cast<int64_t>(PC) + SignExtend64<28>(Contents << 2);
+  }
+  case ELF::R_LARCH_PCALA_LO12:
+  case ELF::R_LARCH_GOT_PC_LO12: {
+    Contents &= ~0xffffffffffc003ffULL;
+    return SignExtend64<12>(Contents >> 10);
+  }
+  case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_GOT_PC_HI20: {
+    Contents &= ~0xfffffffffe00001fULL;
+    Contents = static_cast<int64_t>(PC) + SignExtend64<32>(Contents << 7);
+    Contents &= ~0xfffULL;
+    return Contents;
+  }
+  case ELF::R_LARCH_GOT64_PC_LO20: {
+    Contents &= ~0xfffffffffe00001fULL;
+    PC = static_cast<int64_t>(PC) & ~0xffffffffULL;
+    return PC + SignExtend64<52>(Contents << 27);
+  }
+  case ELF::R_LARCH_GOT64_PC_HI12: {
+    Contents &= ~0xffffffffffc003ffULL;
+    PC = static_cast<int64_t>(PC) & ~0xffffffffULL;
+    return PC + (Contents << 42);
+  }
+  }
+}
+
 static bool isGOTX86(uint64_t Type) {
   switch (Type) {
   default:
@@ -631,6 +709,18 @@ static bool isGOTRISCV(uint64_t Type) {
   }
 }
 
+static bool isGOTLoongArch(uint64_t Type) {
+  switch (Type) {
+  default:
+    return false;
+  case ELF::R_LARCH_GOT_PC_LO12:
+  case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT64_PC_LO20:
+  case ELF::R_LARCH_GOT64_PC_HI12:
+    return true;
+  }
+}
+
 static bool isTLSX86(uint64_t Type) {
   switch (Type) {
   default:
@@ -671,6 +761,13 @@ static bool isTLSRISCV(uint64_t Type) {
   case ELFReserved::R_RISCV_TPREL_I:
   case ELFReserved::R_RISCV_TPREL_S:
     return true;
+  }
+}
+
+static bool isTLSLoongArch(uint64_t Type) {
+  switch (Type) {
+  default:
+    return false;
   }
 }
 
@@ -773,11 +870,30 @@ static bool isPCRelativeRISCV(uint64_t Type) {
   }
 }
 
+static bool isPCRelativeLoongArch(uint64_t Type) {
+  switch (Type) {
+  default:
+    llvm_unreachable("Unknown relocation type");
+  case ELF::R_LARCH_PCALA_LO12:
+  case ELF::R_LARCH_GOT_PC_LO12:
+    return false;
+  case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_B26:
+  case ELF::R_LARCH_PCALA_HI20:
+  case ELF::R_LARCH_GOT_PC_HI20:
+  case ELF::R_LARCH_GOT64_PC_LO20:
+  case ELF::R_LARCH_GOT64_PC_HI12:
+    return true;
+  }
+}
+
 bool Relocation::isSupported(uint64_t Type) {
   if (Arch == Triple::aarch64)
     return isSupportedAArch64(Type);
   if (Arch == Triple::riscv64)
     return isSupportedRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return isSupportedLoongArch(Type);
   return isSupportedX86(Type);
 }
 
@@ -786,6 +902,8 @@ size_t Relocation::getSizeForType(uint64_t Type) {
     return getSizeForTypeAArch64(Type);
   if (Arch == Triple::riscv64)
     return getSizeForTypeRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return getSizeForTypeLoongArch(Type);
   return getSizeForTypeX86(Type);
 }
 
@@ -794,6 +912,8 @@ bool Relocation::skipRelocationType(uint64_t Type) {
     return skipRelocationTypeAArch64(Type);
   if (Arch == Triple::riscv64)
     return skipRelocationTypeRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return skipRelocationTypeLoongArch(Type);
   return skipRelocationTypeX86(Type);
 }
 
@@ -802,6 +922,8 @@ bool Relocation::skipRelocationProcess(uint64_t &Type, uint64_t Contents) {
     return skipRelocationProcessAArch64(Type, Contents);
   if (Arch == Triple::riscv64)
     skipRelocationProcessRISCV(Type, Contents);
+  if (Arch == Triple::loongarch64)
+    return skipRelocationProcessLoongArch(Type, Contents);
   return skipRelocationProcessX86(Type, Contents);
 }
 
@@ -810,6 +932,8 @@ uint64_t Relocation::encodeValue(uint64_t Type, uint64_t Value, uint64_t PC) {
     return encodeValueAArch64(Type, Value, PC);
   if (Arch == Triple::riscv64)
     return encodeValueRISCV(Type, Value, PC);
+  if (Arch == Triple::loongarch64)
+    llvm_unreachable("not implemented");
   return encodeValueX86(Type, Value, PC);
 }
 
@@ -819,6 +943,8 @@ uint64_t Relocation::extractValue(uint64_t Type, uint64_t Contents,
     return extractValueAArch64(Type, Contents, PC);
   if (Arch == Triple::riscv64)
     return extractValueRISCV(Type, Contents, PC);
+  if (Arch == Triple::loongarch64)
+    return extractValueLoongArch(Type, Contents, PC);
   return extractValueX86(Type, Contents, PC);
 }
 
@@ -827,6 +953,8 @@ bool Relocation::isGOT(uint64_t Type) {
     return isGOTAArch64(Type);
   if (Arch == Triple::riscv64)
     return isGOTRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return isGOTLoongArch(Type);
   return isGOTX86(Type);
 }
 
@@ -849,6 +977,8 @@ bool Relocation::isRelative(uint64_t Type) {
     return Type == ELF::R_AARCH64_RELATIVE;
   if (Arch == Triple::riscv64)
     return Type == ELF::R_RISCV_RELATIVE;
+  if (Arch == Triple::loongarch64)
+    return Type == ELF::R_LARCH_RELATIVE;
   return Type == ELF::R_X86_64_RELATIVE;
 }
 
@@ -856,6 +986,8 @@ bool Relocation::isIRelative(uint64_t Type) {
   if (Arch == Triple::aarch64)
     return Type == ELF::R_AARCH64_IRELATIVE;
   if (Arch == Triple::riscv64)
+    llvm_unreachable("not implemented");
+  if (Arch == Triple::loongarch64)
     llvm_unreachable("not implemented");
   return Type == ELF::R_X86_64_IRELATIVE;
 }
@@ -865,6 +997,8 @@ bool Relocation::isTLS(uint64_t Type) {
     return isTLSAArch64(Type);
   if (Arch == Triple::riscv64)
     return isTLSRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return isTLSLoongArch(Type);
   return isTLSX86(Type);
 }
 
@@ -886,6 +1020,8 @@ uint64_t Relocation::getNone() {
     return ELF::R_AARCH64_NONE;
   if (Arch == Triple::riscv64)
     return ELF::R_RISCV_NONE;
+  if (Arch == Triple::loongarch64)
+    return ELF::R_LARCH_NONE;
   return ELF::R_X86_64_NONE;
 }
 
@@ -894,6 +1030,8 @@ uint64_t Relocation::getPC32() {
     return ELF::R_AARCH64_PREL32;
   if (Arch == Triple::riscv64)
     return ELF::R_RISCV_32_PCREL;
+  if (Arch == Triple::loongarch64)
+    return ELF::R_LARCH_32_PCREL;
   return ELF::R_X86_64_PC32;
 }
 
@@ -901,6 +1039,8 @@ uint64_t Relocation::getPC64() {
   if (Arch == Triple::aarch64)
     return ELF::R_AARCH64_PREL64;
   if (Arch == Triple::riscv64)
+    llvm_unreachable("not implemented");
+  if (Arch == Triple::loongarch64)
     llvm_unreachable("not implemented");
   return ELF::R_X86_64_PC64;
 }
@@ -910,6 +1050,8 @@ bool Relocation::isPCRelative(uint64_t Type) {
     return isPCRelativeAArch64(Type);
   if (Arch == Triple::riscv64)
     return isPCRelativeRISCV(Type);
+  if (Arch == Triple::loongarch64)
+    return isPCRelativeLoongArch(Type);
   return isPCRelativeX86(Type);
 }
 
@@ -1005,6 +1147,19 @@ void Relocation::print(raw_ostream &OS) const {
     OS << #name;                                                               \
     break;
 #include "llvm/BinaryFormat/ELFRelocs/RISCV.def"
+    }
+  } else if (Arch == Triple::loongarch64) {
+    // LoongArch relocations are not sequentially numbered so we cannot
+    // use an array
+    switch (Type) {
+    default:
+      llvm_unreachable("illegal LoongArch relocation");
+#undef ELF_RELOC
+#define ELF_RELOC(name, value)                                                 \
+  case value:                                                                  \
+    OS << #name;                                                               \
+    break;
+#include "llvm/BinaryFormat/ELFRelocs/LoongArch.def"
     }
   } else
     OS << X86RelocNames[Type];
