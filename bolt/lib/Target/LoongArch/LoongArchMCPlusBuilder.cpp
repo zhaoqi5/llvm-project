@@ -99,6 +99,24 @@ public:
     return true;
   }
 
+  bool createReturn(MCInst &Inst) const override {
+    Inst.setOpcode(LoongArch::JIRL);
+    Inst.clear();
+    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
+    Inst.addOperand(MCOperand::createReg(LoongArch::R1));
+    Inst.addOperand(MCOperand::createImm(0));
+    return true;
+  }
+
+  bool createUncondBranch(MCInst &Inst, const MCSymbol *TBB,
+                          MCContext *Ctx) const override {
+    Inst.setOpcode(LoongArch::B);
+    Inst.clear();
+    Inst.addOperand(MCOperand::createExpr(
+        MCSymbolRefExpr::create(TBB, MCSymbolRefExpr::VK_None, *Ctx)));
+    return true;
+  }
+
   StringRef getTrapFillValue() const override {
     return StringRef("\0\0\0\0", 4);
   }
