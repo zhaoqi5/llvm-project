@@ -320,6 +320,40 @@ public:
     }
   }
 
+  unsigned getInvertedBranchOpcode(unsigned Opcode) const {
+    switch (Opcode) {
+    default:
+      llvm_unreachable("Failed to invert branch opcode");
+      return Opcode;
+    case LoongArch::BEQ:
+      return LoongArch::BNE;
+    case LoongArch::BNE:
+      return LoongArch::BEQ;
+    case LoongArch::BEQZ:
+      return LoongArch::BNEZ;
+    case LoongArch::BNEZ:
+      return LoongArch::BEQZ;
+    case LoongArch::BCEQZ:
+      return LoongArch::BCNEZ;
+    case LoongArch::BCNEZ:
+      return LoongArch::BCEQZ;
+    case LoongArch::BLT:
+      return LoongArch::BGE;
+    case LoongArch::BGE:
+      return LoongArch::BLT;
+    case LoongArch::BLTU:
+      return LoongArch::BGEU;
+    case LoongArch::BGEU:
+      return LoongArch::BLTU;
+    }
+  }
+
+  bool reverseBranchCondition(MCInst &Inst, const MCSymbol *TBB,
+                              MCContext *Ctx) const override {
+    Inst.setOpcode(getInvertedBranchOpcode(Inst.getOpcode()));
+    return replaceBranchTarget(Inst, TBB, Ctx);
+  }
+
   bool lowerTailCall(MCInst &Inst) override {
     removeAnnotation(Inst, MCPlus::MCAnnotation::kTailCall);
     if (getConditionalTailCall(Inst))
