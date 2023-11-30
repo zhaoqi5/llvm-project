@@ -140,6 +140,7 @@ static bool isSupportedLoongArch(uint64_t Type) {
   case ELF::R_LARCH_GOT_PC_HI20:
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
+  case ELF::R_LARCH_64:
     return true;
   }
 }
@@ -263,6 +264,8 @@ static size_t getSizeForTypeLoongArch(uint64_t Type) {
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
     return 4;
+  case ELF::R_LARCH_64:
+    return 8;
   }
 }
 
@@ -630,6 +633,8 @@ static uint64_t extractValueLoongArch(uint64_t Type, uint64_t Contents,
   default:
     errs() << object::getELFRelocationTypeName(ELF::EM_LOONGARCH, Type) << '\n';
     llvm_unreachable("unsupported relocation type");
+  case ELF::R_LARCH_64:
+    return Contents;
   case ELF::R_LARCH_B26: {
     Contents &= ~0xfffffffffc000000ULL;
     uint64_t LowBits = (Contents >> 10) & 0xffff;
@@ -874,6 +879,7 @@ static bool isPCRelativeLoongArch(uint64_t Type) {
   switch (Type) {
   default:
     llvm_unreachable("Unknown relocation type");
+  case ELF::R_LARCH_64:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
     return false;
@@ -1060,6 +1066,8 @@ uint64_t Relocation::getAbs64() {
     return ELF::R_AARCH64_ABS64;
   if (Arch == Triple::riscv64)
     return ELF::R_RISCV_64;
+  if (Arch == Triple::loongarch64)
+    return ELF::R_LARCH_64;
   return ELF::R_X86_64_64;
 }
 
