@@ -362,6 +362,19 @@ public:
   }
 
   uint16_t getMinFunctionAlignment() const override { return 4; }
+
+  void getCalleeSavedRegs(BitVector &Regs) const override {
+    Regs |= getAliases(LoongArch::R22);
+    Regs |= getAliases(LoongArch::R23);
+    Regs |= getAliases(LoongArch::R24);
+    Regs |= getAliases(LoongArch::R25);
+    Regs |= getAliases(LoongArch::R26);
+    Regs |= getAliases(LoongArch::R27);
+    Regs |= getAliases(LoongArch::R28);
+    Regs |= getAliases(LoongArch::R29);
+    Regs |= getAliases(LoongArch::R30);
+    Regs |= getAliases(LoongArch::R31);
+  }
 };
 
 } // end anonymous namespace
