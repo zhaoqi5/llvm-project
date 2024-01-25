@@ -12,6 +12,7 @@
 #include "bolt/Passes/AllocCombiner.h"
 #include "bolt/Passes/AsmDump.h"
 #include "bolt/Passes/CMOVConversion.h"
+#include "bolt/Passes/FixLoongArchCallsPass.h"
 #include "bolt/Passes/FixRISCVCallsPass.h"
 #include "bolt/Passes/FixRelaxationPass.h"
 #include "bolt/Passes/FrameOptimizer.h"
@@ -196,6 +197,11 @@ static cl::opt<bool>
                        cl::desc("print functions after fix RISCV calls pass"),
                        cl::Hidden, cl::cat(BoltOptCategory));
 
+static cl::opt<bool> PrintFixLoongArchCalls(
+    "print-fix-loongarch-calls",
+    cl::desc("print functions after fix LoongArch calls pass"), cl::Hidden,
+    cl::cat(BoltOptCategory));
+
 static cl::opt<bool> PrintVeneerElimination(
     "print-veneer-elimination",
     cl::desc("print functions after veneer elimination pass"), cl::Hidden,
@@ -350,6 +356,11 @@ Error BinaryFunctionPassManager::runAllPasses(BinaryContext &BC) {
   if (BC.isRISCV()) {
     Manager.registerPass(
         std::make_unique<FixRISCVCallsPass>(PrintFixRISCVCalls));
+  }
+
+  if (BC.isLoongArch()) {
+    Manager.registerPass(
+        std::make_unique<FixLoongArchCallsPass>(PrintFixLoongArchCalls));
   }
 
   // Here we manage dependencies/order manually, since passes are run in the

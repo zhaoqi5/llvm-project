@@ -13,6 +13,7 @@ add_llvm_library(LLVMBOLTPasses
   DataflowInfoManager.cpp
   FrameAnalysis.cpp
   FrameOptimizer.cpp
+  FixLoongArchCallsPass.cpp
   FixRelaxationPass.cpp
   FixRISCVCallsPass.cpp
   HFSort.cpp
