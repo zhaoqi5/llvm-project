@@ -4,6 +4,7 @@
 # RUN:              --abs external_data=0xdeadbeef \
 # RUN:              --abs external_func=0xcafef00d \
 # RUN:              --check %s %t/elf_reloc.o
+
     .text
 
     .globl main
@@ -11,15 +12,8 @@
     .type main,@function
 main:
     ret
-
     .size main, .-main
 
-## Check R_LARCH_B26 relocation of a local function call.
-
-# jitlink-check: decode_operand(local_func_call26, 0)[27:0] = \
-# jitlink-check:   (local_func - local_func_call26)[27:0]
-# jitlink-check: decode_operand(local_func_jump26, 0)[27:0] = \
-# jitlink-check:   (local_func - local_func_jump26)[27:0]
     .globl local_func
     .p2align 2
     .type local_func,@function
@@ -27,6 +21,12 @@ local_func:
     ret
     .size local_func, .-local_func
 
+## Check R_LARCH_B26 relocation of a local function call.
+
+# jitlink-check: decode_operand(local_func_call26, 0)[27:0] = \
+# jitlink-check:   (local_func - local_func_call26)[27:0]
+# jitlink-check: decode_operand(local_func_jump26, 0)[27:0] = \
+# jitlink-check:   (local_func - local_func_jump26)[27:0]
     .globl local_func_call26
     .p2align 2
 local_func_call26:
@@ -38,6 +38,20 @@ local_func_call26:
 local_func_jump26:
     b local_func
     .size local_func_jump26, .-local_func_jump26
+
+## Check R_LARCH_CALL36 relocation of a local function call used in medium
+## code model.
+
+# jitlink-check: decode_operand(local_func_call36, 1)[19:0] = \
+# jitlink-check:   (local_func - local_func_call36 + 0x20000)[37:18]
+# jitlink-check: decode_operand(local_func_call36 + 4, 2)[17:0] = \
+# jitlink-check:   (local_func - local_func_call36)[17:0]
+    .globl local_func_call36
+    .p2align 2
+local_func_call36:
+    pcaddu18i $ra, %call36(local_func)
+    jirl $ra, $ra, 0
+    .size local_func_call36, .-local_func_call36
 
 ## Check R_LARCH_PCALA_HI20 / R_LARCH_PCALA_LO12 relocation of a local symbol.
 
@@ -98,6 +112,23 @@ test_external_call:
 test_external_jump:
     b external_func
     .size test_external_jump, .-test_external_jump
+
+## Check that medium code model calls to external functions trigger the
+## generation of stubs and GOT entries.
+
+# jitlink-check: *{8}(got_addr(elf_reloc.o, external_func)) = external_func
+# jitlink-check: decode_operand(test_external_call36, 1)[19:0] = \
+# jitlink-check:   (stub_addr(elf_reloc.o, external_func) - \
+# jitlink-check:      test_external_call36 + 0x20000)[37:18]
+# jitlink-check: decode_operand(test_external_call36 + 4, 2)[17:0] = \
+# jitlink-check:   (stub_addr(elf_reloc.o, external_func) - \
+# jitlink-check:      test_external_call36)[17:0]
+    .globl test_external_call36
+    .p2align 2
+test_external_call36:
+    pcaddu18i $ra, %call36(external_func)
+    jirl $ra, $ra, 0
+    .size test_external_call36, .-test_external_call36
 
 ## Check R_LARCH_GOT_PC_HI20 / R_LARCH_GOT_PC_LO12 handling with a reference to
 ## an external symbol. Validate both the reference to the GOT entry, and also

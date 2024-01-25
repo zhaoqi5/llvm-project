@@ -218,6 +218,17 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///   NONE
   ///
   RequestGOT64AndTransformToPage64Hi12,
+
+  /// A function call sequence 'pcaddu18i + jirl' used for medium code model.
+  /// The two instructions must be adjacent.
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target - Fixup + Addend) >> 2 : int36
+  ///
+  /// Notes:
+  ///   For PCADDU18I + JIRL fixups.
+  ///
+  Call36,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
@@ -225,8 +236,8 @@ enum EdgeKind_loongarch : Edge::Kind {
 const char *getEdgeKindName(Edge::Kind K);
 
 // Returns extract bits Val[Hi:Lo].
-inline uint32_t extractBits(uint32_t Val, unsigned Hi, unsigned Lo) {
-  return (Val & (((1UL << (Hi + 1)) - 1))) >> Lo;
+inline uint32_t extractBits(uint64_t Val, unsigned Hi, unsigned Lo) {
+  return Hi == 63 ? Val >> Lo : (Val & ((1ULL << (Hi + 1)) - 1)) >> Lo;
 }
 
 /// Apply fixup expression for edge to block content.
@@ -338,6 +349,26 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E) {
     uint32_t Imm63_52 = extractBits(PageDelta >> 32, /*Hi=*/31, /*Lo=*/20)
                         << 10;
     *(little32_t *)FixupPtr = RawInstr | Imm63_52;
+    break;
+  }
+  case Call36: {
+    int64_t Value = TargetAddress - FixupAddress + Addend;
+
+    if (!isInt<38>(Value + 0x20000))
+      return makeTargetOutOfRangeError(G, B, E);
+
+    if (!isShiftedInt<36, 2>(Value))
+      return makeAlignmentError(orc::ExecutorAddr(FixupAddress), Value, 4, E);
+
+    uint32_t RawInstrPcaddu18i = *(little32_t *)FixupPtr;
+    uint32_t RawInstrJirl = *(little32_t *)(FixupPtr + 4);
+
+    uint32_t Pcaddu18i_Imm35_16 =
+        extractBits((Value + (1 << 17)) >> 2, /*Hi=*/35, /*Lo=*/16) << 5;
+    uint32_t Jirl_Imm15_0 = extractBits(Value >> 2, /*Hi=*/15, /*Lo=*/0) << 10;
+
+    *(little32_t *)FixupPtr = RawInstrPcaddu18i | Pcaddu18i_Imm35_16;
+    *(little32_t *)(FixupPtr + 4) = RawInstrJirl | Jirl_Imm15_0;
     break;
   }
   default:
@@ -462,7 +493,8 @@ public:
   static StringRef getSectionName() { return "$__STUBS"; }
 
   bool visitEdge(LinkGraph &G, Block *B, Edge &E) {
-    if (E.getKind() == Branch26PCRel && !E.getTarget().isDefined()) {
+    if ((E.getKind() == Branch26PCRel || E.getKind() == Call36) &&
+        !E.getTarget().isDefined()) {
       DEBUG_WITH_TYPE("jitlink", {
         dbgs() << "  Fixing " << G.getEdgeKindName(E.getKind()) << " edge at "
                << B->getFixupAddress(E) << " (" << B->getAddress() << " + "

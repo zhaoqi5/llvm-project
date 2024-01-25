@@ -76,6 +76,8 @@ private:
       return RequestGOT64AndTransformToPage64Lo20;
     case ELF::R_LARCH_GOT64_PC_HI12:
       return RequestGOT64AndTransformToPage64Hi12;
+    case ELF::R_LARCH_CALL36:
+      return Call36;
     }
 
     return make_error<JITLinkError>(
