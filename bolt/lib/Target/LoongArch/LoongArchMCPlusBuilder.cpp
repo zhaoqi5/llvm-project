@@ -413,6 +413,17 @@ public:
     Regs |= getAliases(LoongArch::R30);
     Regs |= getAliases(LoongArch::R31);
   }
+
+  bool equals(const MCTargetExpr &A, const MCTargetExpr &B,
+              CompFuncTy Comp) const override {
+    const auto &LoongArchExprA = cast<LoongArchMCExpr>(A);
+    const auto &LoongArchExprB = cast<LoongArchMCExpr>(B);
+    if (LoongArchExprA.getKind() != LoongArchExprB.getKind())
+      return false;
+
+    return MCPlusBuilder::equals(*LoongArchExprA.getSubExpr(),
+                                 *LoongArchExprB.getSubExpr(), Comp);
+  }
 };
 
 } // end anonymous namespace
