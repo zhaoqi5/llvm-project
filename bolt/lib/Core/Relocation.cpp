@@ -141,6 +141,7 @@ static bool isSupportedLoongArch(uint64_t Type) {
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
   case ELF::R_LARCH_64:
+  case ELF::R_LARCH_32_PCREL:
     return true;
   }
 }
@@ -635,6 +636,8 @@ static uint64_t extractValueLoongArch(uint64_t Type, uint64_t Contents,
     llvm_unreachable("unsupported relocation type");
   case ELF::R_LARCH_64:
     return Contents;
+  case ELF::R_LARCH_32_PCREL:
+    return static_cast<int64_t>(PC) + SignExtend64<32>(Contents & 0xffffffff);
   case ELF::R_LARCH_B26: {
     Contents &= ~0xfffffffffc000000ULL;
     uint64_t LowBits = (Contents >> 10) & 0xffff;
