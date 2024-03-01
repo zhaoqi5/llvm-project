@@ -144,6 +144,8 @@ static bool isSupportedLoongArch(uint64_t Type) {
   case ELF::R_LARCH_GOT64_PC_HI12:
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_32_PCREL:
+  case ELF::R_LARCH_TLS_LE_HI20:
+  case ELF::R_LARCH_TLS_LE_LO12:
     return true;
   }
 }
@@ -268,6 +270,8 @@ static size_t getSizeForTypeLoongArch(uint64_t Type) {
   case ELF::R_LARCH_GOT_PC_HI20:
   case ELF::R_LARCH_GOT64_PC_LO20:
   case ELF::R_LARCH_GOT64_PC_HI12:
+  case ELF::R_LARCH_TLS_LE_HI20:
+  case ELF::R_LARCH_TLS_LE_LO12:
     return 4;
   case ELF::R_LARCH_64:
     return 8;
@@ -673,6 +677,14 @@ static uint64_t extractValueLoongArch(uint64_t Type, uint64_t Contents,
     PC = static_cast<int64_t>(PC) & ~0xffffffffULL;
     return PC + (Contents << 42);
   }
+  case ELF::R_LARCH_TLS_LE_HI20: {
+    Contents &= ~0xfffffffffe00001fULL;
+    return Contents << 7;
+  }
+  case ELF::R_LARCH_TLS_LE_LO12: {
+    Contents &= ~0xffffffffffc003ffULL;
+    return SignExtend64<12>(Contents >> 10);
+  }
   }
 }
 
@@ -782,6 +794,9 @@ static bool isTLSLoongArch(uint64_t Type) {
   switch (Type) {
   default:
     return false;
+  case ELF::R_LARCH_TLS_LE_HI20:
+  case ELF::R_LARCH_TLS_LE_LO12:
+    return true;
   }
 }
 
@@ -891,6 +906,8 @@ static bool isPCRelativeLoongArch(uint64_t Type) {
   case ELF::R_LARCH_64:
   case ELF::R_LARCH_PCALA_LO12:
   case ELF::R_LARCH_GOT_PC_LO12:
+  case ELF::R_LARCH_TLS_LE_HI20:
+  case ELF::R_LARCH_TLS_LE_LO12:
     return false;
   case ELF::R_LARCH_32_PCREL:
   case ELF::R_LARCH_B26:

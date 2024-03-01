@@ -42,6 +42,8 @@ public:
     case ELF::R_LARCH_GOT_PC_HI20:
     case ELF::R_LARCH_GOT64_PC_LO20:
     case ELF::R_LARCH_GOT64_PC_HI12:
+    case ELF::R_LARCH_TLS_LE_HI20:
+    case ELF::R_LARCH_TLS_LE_LO12:
       return true;
     default:
       llvm_unreachable("Unexpected LoongArch relocation type in code");
@@ -364,6 +366,12 @@ public:
     case ELF::R_LARCH_GOT64_PC_HI12:
       return LoongArchMCExpr::create(
           Expr, LoongArchMCExpr::VK_LoongArch_GOT64_PC_HI12, Ctx);
+    case ELF::R_LARCH_TLS_LE_HI20:
+      return LoongArchMCExpr::create(
+          Expr, LoongArchMCExpr::VK_LoongArch_TLS_LE_HI20, Ctx);
+    case ELF::R_LARCH_TLS_LE_LO12:
+      return LoongArchMCExpr::create(
+          Expr, LoongArchMCExpr::VK_LoongArch_TLS_LE_LO12, Ctx);
     }
   }
 
