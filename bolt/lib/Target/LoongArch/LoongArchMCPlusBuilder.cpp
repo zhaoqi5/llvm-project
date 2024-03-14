@@ -125,6 +125,15 @@ public:
     return true;
   }
 
+  bool createNoop(MCInst &Inst) const override {
+    Inst.setOpcode(LoongArch::ANDI);
+    Inst.clear();
+    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
+    Inst.addOperand(MCOperand::createReg(LoongArch::R0));
+    Inst.addOperand(MCOperand::createImm(0));
+    return true;
+  }
+
   bool createUncondBranch(MCInst &Inst, const MCSymbol *TBB,
                           MCContext *Ctx) const override {
     Inst.setOpcode(LoongArch::B);
