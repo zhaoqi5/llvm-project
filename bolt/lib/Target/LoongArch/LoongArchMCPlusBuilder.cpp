@@ -10,10 +10,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/LoongArchFixupKinds.h"
 #include "MCTargetDesc/LoongArchMCExpr.h"
 #include "MCTargetDesc/LoongArchMCTargetDesc.h"
 #include "bolt/Core/MCPlusBuilder.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/MC/MCFixupKindInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/Support/Debug.h"
@@ -171,6 +173,33 @@ public:
     InstB.addOperand(MCOperand::createImm(0));
 
     return true;
+  }
+
+  bool createDirectCall(MCInst &Inst, const MCSymbol *Target, MCContext *Ctx,
+                        bool IsTailCall) override {
+    Inst.clear();
+    Inst.setOpcode(IsTailCall ? LoongArch::B : LoongArch::BL);
+    Inst.addOperand(MCOperand::createExpr(
+        MCSymbolRefExpr::create(Target, MCSymbolRefExpr::VK_None, *Ctx)));
+    if (IsTailCall)
+      setTailCall(Inst);
+    return true;
+  }
+
+  bool createTailCall(MCInst &Inst, const MCSymbol *Target,
+                      MCContext *Ctx) override {
+    return createDirectCall(Inst, Target, Ctx, /*IsTailCall*/ true);
+  }
+
+  void createLongTailCall(InstructionListType &Seq, const MCSymbol *Target,
+                          MCContext *Ctx) override {
+    InstructionListType Insts(2);
+
+    bool succ = createLoongArchCall(Insts[0], Insts[1], Target, Ctx,
+                                    /*isTailCall*/ true);
+    assert(succ && "Failed to create long tail call.");
+
+    Seq.swap(Insts);
   }
 
   bool analyzeBranch(InstructionIterator Begin, InstructionIterator End,
@@ -438,6 +467,25 @@ public:
     Regs |= getAliases(LoongArch::R29);
     Regs |= getAliases(LoongArch::R30);
     Regs |= getAliases(LoongArch::R31);
+  }
+
+  std::optional<Relocation>
+  createRelocation(const MCFixup &Fixup,
+                   const MCAsmBackend &MAB) const override {
+    const MCFixupKindInfo &FKI = MAB.getFixupKindInfo(Fixup.getKind());
+
+    assert(FKI.TargetOffset == 0 && "0-bit relocation offset expected");
+    const uint64_t RelOffset = Fixup.getOffset();
+
+    uint64_t RelType;
+    if (Fixup.getKind() == MCFixupKind(LoongArch::fixup_loongarch_b26))
+      RelType = ELF::R_LARCH_B26;
+    else // TODO: Need more consideration. Refs to x86 or AArch64.
+      return std::nullopt;
+
+    auto [RelSymbol, RelAddend] = extractFixupExpr(Fixup);
+
+    return Relocation({RelOffset, RelSymbol, RelType, RelAddend, 0});
   }
 
   bool equals(const MCTargetExpr &A, const MCTargetExpr &B,

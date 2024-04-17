@@ -455,6 +455,23 @@ static uint64_t encodeValueRISCV(uint64_t Type, uint64_t Value, uint64_t PC) {
   return Value;
 }
 
+static uint64_t encodeValueLoongArch(uint64_t Type, uint64_t Value,
+                                     uint64_t PC) {
+  switch (Type) {
+  default:
+    llvm_unreachable("unsupported relocation");
+  case ELF::R_LARCH_B26:
+    Value -= PC;
+    assert(isInt<28>(Value) &&
+           "only PC + [-128MiB, +128MiB - 4] is allowed for direct call");
+    // Immediate goes in bits 25:0 of BL.
+    // OP 0101_01 goes in bits 31:26 of BL.
+    Value = ((Value >> 2) & 0x3ffffff) | 0x54000000ULL;
+    break;
+  }
+  return Value;
+}
+
 static uint64_t extractValueX86(uint64_t Type, uint64_t Contents, uint64_t PC) {
   if (Type == ELF::R_X86_64_32S)
     return SignExtend64<32>(Contents);
@@ -967,7 +984,7 @@ uint64_t Relocation::encodeValue(uint64_t Type, uint64_t Value, uint64_t PC) {
   if (Arch == Triple::riscv64)
     return encodeValueRISCV(Type, Value, PC);
   if (Arch == Triple::loongarch64)
-    llvm_unreachable("not implemented");
+    return encodeValueLoongArch(Type, Value, PC);
   return encodeValueX86(Type, Value, PC);
 }
 
