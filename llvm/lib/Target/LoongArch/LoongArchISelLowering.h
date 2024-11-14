@@ -278,7 +278,6 @@ public:
 
   bool isFPImmVLDILegal(const APFloat &Imm, EVT VT) const;
 
-private:
   /// Target-specific function used to lower LoongArch calling conventions.
   typedef bool LoongArchCCAssignFn(const DataLayout &DL, LoongArchABI::ABI ABI,
                                    unsigned ValNo, MVT ValVT,
@@ -286,6 +285,7 @@ private:
                                    ISD::ArgFlagsTy ArgFlags, CCState &State,
                                    bool IsFixed, bool IsRet, Type *OrigTy);
 
+private:
   void analyzeInputArgs(MachineFunction &MF, CCState &CCInfo,
                         const SmallVectorImpl<ISD::InputArg> &Ins, bool IsRet,
                         LoongArchCCAssignFn Fn) const;
@@ -356,6 +356,14 @@ private:
 
   bool softPromoteHalfType() const override { return true; }
 };
+
+namespace LoongArch {
+
+bool CC_LoongArch(const DataLayout &DL, LoongArchABI::ABI ABI, unsigned ValNo,
+                  MVT ValVT, CCValAssign::LocInfo LocInfo,
+                  ISD::ArgFlagsTy ArgFlags, CCState &State, bool IsFixed,
+                  bool IsRet, Type *OrigTy);
+} // end namespace LoongArch
 
 } // end namespace llvm
 

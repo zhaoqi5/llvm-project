@@ -4796,11 +4796,11 @@ static bool CC_LoongArchAssign2GRLen(unsigned GRLen, CCState &State,
 }
 
 // Implements the LoongArch calling convention. Returns true upon failure.
-static bool CC_LoongArch(const DataLayout &DL, LoongArchABI::ABI ABI,
-                         unsigned ValNo, MVT ValVT,
-                         CCValAssign::LocInfo LocInfo, ISD::ArgFlagsTy ArgFlags,
-                         CCState &State, bool IsFixed, bool IsRet,
-                         Type *OrigTy) {
+bool LoongArch::CC_LoongArch(const DataLayout &DL, LoongArchABI::ABI ABI,
+                             unsigned ValNo, MVT ValVT,
+                             CCValAssign::LocInfo LocInfo,
+                             ISD::ArgFlagsTy ArgFlags, CCState &State,
+                             bool IsFixed, bool IsRet, Type *OrigTy) {
   unsigned GRLen = DL.getLargestLegalIntTypeSizeInBits();
   assert((GRLen == 32 || GRLen == 64) && "Unspport GRLen");
   MVT GRLenVT = GRLen == 32 ? MVT::i32 : MVT::i64;
@@ -5161,7 +5161,7 @@ SDValue LoongArchTargetLowering::LowerFormalArguments(
   if (CallConv == CallingConv::GHC)
     CCInfo.AnalyzeFormalArguments(Ins, CC_LoongArch_GHC);
   else
-    analyzeInputArgs(MF, CCInfo, Ins, /*IsRet=*/false, CC_LoongArch);
+    analyzeInputArgs(MF, CCInfo, Ins, /*IsRet=*/false, LoongArch::CC_LoongArch);
 
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
@@ -5369,7 +5369,8 @@ LoongArchTargetLowering::LowerCall(CallLoweringInfo &CLI,
   if (CallConv == CallingConv::GHC)
     ArgCCInfo.AnalyzeCallOperands(Outs, CC_LoongArch_GHC);
   else
-    analyzeOutputArgs(MF, ArgCCInfo, Outs, /*IsRet=*/false, &CLI, CC_LoongArch);
+    analyzeOutputArgs(MF, ArgCCInfo, Outs, /*IsRet=*/false, &CLI,
+                      LoongArch::CC_LoongArch);
 
   // Check if it's really possible to do a tail call.
   if (IsTailCall)
@@ -5578,7 +5579,7 @@ LoongArchTargetLowering::LowerCall(CallLoweringInfo &CLI,
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign> RVLocs;
   CCState RetCCInfo(CallConv, IsVarArg, MF, RVLocs, *DAG.getContext());
-  analyzeInputArgs(MF, RetCCInfo, Ins, /*IsRet=*/true, CC_LoongArch);
+  analyzeInputArgs(MF, RetCCInfo, Ins, /*IsRet=*/true, LoongArch::CC_LoongArch);
 
   // Copy all of the result registers out of their specified physreg.
   for (auto &VA : RVLocs) {
@@ -5606,9 +5607,9 @@ bool LoongArchTargetLowering::CanLowerReturn(
   for (unsigned i = 0, e = Outs.size(); i != e; ++i) {
     LoongArchABI::ABI ABI =
         MF.getSubtarget<LoongArchSubtarget>().getTargetABI();
-    if (CC_LoongArch(MF.getDataLayout(), ABI, i, Outs[i].VT, CCValAssign::Full,
-                     Outs[i].Flags, CCInfo, /*IsFixed=*/true, /*IsRet=*/true,
-                     nullptr))
+    if (LoongArch::CC_LoongArch(MF.getDataLayout(), ABI, i, Outs[i].VT,
+                                CCValAssign::Full, Outs[i].Flags, CCInfo,
+                                /*IsFixed=*/true, /*IsRet=*/true, nullptr))
       return false;
   }
   return true;
@@ -5627,7 +5628,7 @@ SDValue LoongArchTargetLowering::LowerReturn(
                  *DAG.getContext());
 
   analyzeOutputArgs(DAG.getMachineFunction(), CCInfo, Outs, /*IsRet=*/true,
-                    nullptr, CC_LoongArch);
+                    nullptr, LoongArch::CC_LoongArch);
   if (CallConv == CallingConv::GHC && !RVLocs.empty())
     report_fatal_error("GHC functions return void only");
   SDValue Glue;
