@@ -176,10 +176,37 @@ struct LoongArchIncomingValueHandler
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
                         const CCValAssign &VA) override {
-    // Copy argument received in physical register to desired VReg.
-    MIRBuilder.getMBB().addLiveIn(PhysReg);
-    MIRBuilder.buildCopy(ValVReg, PhysReg);
+    markPhysRegUsed(PhysReg);
+    IncomingValueHandler::assignValueToReg(ValVReg, PhysReg, VA);
   }
+
+  /// How the physical register gets marked varies between formal
+  /// parameters (it's a basic-block live-in), and a call instruction
+  /// (it's an implicit-def of the BL).
+  virtual void markPhysRegUsed(MCRegister PhysReg) = 0;
+};
+
+struct LoongArchFormalArgHandler : public LoongArchIncomingValueHandler {
+  LoongArchFormalArgHandler(MachineIRBuilder &B, MachineRegisterInfo &MRI)
+      : LoongArchIncomingValueHandler(B, MRI) {}
+
+  void markPhysRegUsed(MCRegister PhysReg) override {
+    MIRBuilder.getMRI()->addLiveIn(PhysReg);
+    MIRBuilder.getMBB().addLiveIn(PhysReg);
+  }
+};
+
+struct LoongArchCallReturnHandler : public LoongArchIncomingValueHandler {
+  LoongArchCallReturnHandler(MachineIRBuilder &B, MachineRegisterInfo &MRI,
+                             MachineInstrBuilder &MIB)
+      : LoongArchIncomingValueHandler(B, MRI), MIB(MIB) {}
+
+  void markPhysRegUsed(MCRegister PhysReg) override {
+    MIB.addDef(PhysReg, RegState::Implicit);
+  }
+
+private:
+  MachineInstrBuilder MIB;
 };
 
 } // namespace
@@ -223,7 +250,7 @@ bool LoongArchCallLowering::lowerFormalArguments(
 
   LoongArchIncomingValueAssigner Assigner(LoongArch::CC_LoongArch,
                                           /*IsRet=*/false);
-  LoongArchIncomingValueHandler Handler(MIRBuilder, MF.getRegInfo());
+  LoongArchFormalArgHandler Handler(MIRBuilder, MF.getRegInfo());
 
   return determineAndHandleAssignments(Handler, Assigner, SplitArgInfos,
                                        MIRBuilder, CC, F.isVarArg());
@@ -231,5 +258,105 @@ bool LoongArchCallLowering::lowerFormalArguments(
 
 bool LoongArchCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
                                       CallLoweringInfo &Info) const {
-  return false;
+  MachineFunction &MF = MIRBuilder.getMF();
+  const DataLayout &DL = MF.getDataLayout();
+  const Function &F = MF.getFunction();
+  CallingConv::ID CC = F.getCallingConv();
+
+  // TODO: Support vararg functions.
+  if (Info.IsVarArg)
+    return false;
+
+  // TODO: Support all argument types.
+  for (auto &AInfo : Info.OrigArgs) {
+    if (AInfo.Ty->isIntOrPtrTy())
+      continue;
+    return false;
+  }
+
+  SmallVector<ArgInfo, 32> SplitArgInfos;
+  SmallVector<ISD::OutputArg, 8> Outs;
+  for (auto &AInfo : Info.OrigArgs) {
+    // Handle any required unmerging of split value types from a given VReg into
+    // physical registers. ArgInfo objects are constructed correspondingly and
+    // appended to SplitArgInfos.
+    splitToValueTypes(AInfo, SplitArgInfos, DL, CC);
+  }
+
+  // TODO: Support tail calls.
+  Info.IsTailCall = false;
+
+  // If the callee is a GlobalAddress or ExternalSymbol and cannot be assumed as
+  // DSOLocal, then use MO_CALL_PLT. Otherwise use MO_CALL.
+  if (Info.Callee.isGlobal()) {
+    const GlobalValue *GV = Info.Callee.getGlobal();
+    unsigned OpFlags = getTLI()->getTargetMachine().shouldAssumeDSOLocal(GV)
+                           ? LoongArchII::MO_CALL
+                           : LoongArchII::MO_CALL_PLT;
+
+    Info.Callee.setTargetFlags(OpFlags);
+  } else if (Info.Callee.isSymbol()) {
+    unsigned OpFlags =
+        getTLI()->getTargetMachine().shouldAssumeDSOLocal(nullptr)
+            ? LoongArchII::MO_CALL
+            : LoongArchII::MO_CALL_PLT;
+
+    Info.Callee.setTargetFlags(OpFlags);
+  }
+
+  MachineInstrBuilder Call =
+      MIRBuilder
+          .buildInstrNoInsert(Info.Callee.isReg()
+                                  ? LoongArch::PseudoCALLIndirect
+                                  : LoongArch::PseudoCALL)
+          .add(Info.Callee);
+
+  LoongArchOutgoingValueAssigner ArgAssigner(LoongArch::CC_LoongArch,
+                                             /*IsRet=*/false);
+  LoongArchOutgoingValueHandler ArgHandler(MIRBuilder, MF.getRegInfo(), Call);
+  if (!determineAndHandleAssignments(ArgHandler, ArgAssigner, SplitArgInfos,
+                                     MIRBuilder, CC, Info.IsVarArg))
+    return false;
+
+  MIRBuilder.insertInstr(Call);
+
+  // If Callee is a reg, since it is used by a target specific
+  // instruction, it must have a register class matching the
+  // constraint of that instruction.
+  const LoongArchSubtarget &Subtarget =
+      MIRBuilder.getMF().getSubtarget<LoongArchSubtarget>();
+  const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
+  if (Call->getOperand(0).isReg())
+    constrainOperandRegClass(MF, *TRI, MF.getRegInfo(),
+                             *Subtarget.getInstrInfo(),
+                             *Subtarget.getRegBankInfo(), *Call,
+                             Call->getDesc(), Call->getOperand(0), 0);
+
+  if (Info.OrigRet.Ty->isVoidTy())
+    return true;
+
+  // TODO: Only integer, pointer and aggregate types are supported now.
+  if (!Info.OrigRet.Ty->isIntOrPtrTy() && !Info.OrigRet.Ty->isAggregateType())
+    return false;
+
+  SmallVector<ArgInfo, 4> SplitRetInfos;
+  splitToValueTypes(Info.OrigRet, SplitRetInfos, DL, CC);
+
+  // Assignments should be handled *before* the merging of values takes place.
+  // To ensure this, the insert point is temporarily adjusted to just after the
+  // call instruction.
+  MachineBasicBlock::iterator CallInsertPt = Call;
+  MIRBuilder.setInsertPt(MIRBuilder.getMBB(), std::next(CallInsertPt));
+
+  LoongArchIncomingValueAssigner RetAssigner(LoongArch::CC_LoongArch,
+                                             /*IsRet=*/true);
+  LoongArchCallReturnHandler RetHandler(MIRBuilder, MF.getRegInfo(), Call);
+  if (!determineAndHandleAssignments(RetHandler, RetAssigner, SplitRetInfos,
+                                     MIRBuilder, CC, Info.IsVarArg))
+    return false;
+
+  // Readjust insert point to end of basic block.
+  MIRBuilder.setMBB(MIRBuilder.getMBB());
+
+  return true;
 }
