@@ -17,6 +17,7 @@
 #include "LoongArchSubtarget.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/GlobalISel/MachineIRBuilder.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 
 using namespace llvm;
 
@@ -61,18 +62,41 @@ struct LoongArchOutgoingValueHandler
     : public CallLowering::OutgoingValueHandler {
   LoongArchOutgoingValueHandler(MachineIRBuilder &B, MachineRegisterInfo &MRI,
                                 MachineInstrBuilder MIB)
-      : OutgoingValueHandler(B, MRI), MIB(MIB) {}
+      : OutgoingValueHandler(B, MRI), MIB(MIB),
+        Subtarget(MIRBuilder.getMF().getSubtarget<LoongArchSubtarget>()) {}
 
   Register getStackAddress(uint64_t MemSize, int64_t Offset,
                            MachinePointerInfo &MPO,
                            ISD::ArgFlagsTy Flags) override {
-    llvm_unreachable("not implemented");
+    MachineFunction &MF = MIRBuilder.getMF();
+    LLT p0 = LLT::pointer(0, Subtarget.getGRLen());
+    LLT sGRLen = LLT::scalar(Subtarget.getGRLen());
+
+    if (!SPReg)
+      SPReg = MIRBuilder.buildCopy(p0, Register(LoongArch::R3)).getReg(0);
+
+    auto OffsetReg = MIRBuilder.buildConstant(sGRLen, Offset);
+
+    auto AddrReg = MIRBuilder.buildPtrAdd(p0, SPReg, OffsetReg);
+
+    MPO = MachinePointerInfo::getStack(MF, Offset);
+    return AddrReg.getReg(0);
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
                             const MachinePointerInfo &MPO,
                             const CCValAssign &VA) override {
-    llvm_unreachable("not implemented");
+    MachineFunction &MF = MIRBuilder.getMF();
+    uint64_t LocMemOffset = VA.getLocMemOffset();
+
+    // Upon procedure entry, the stack pointer is required to be divisible
+    // by 16, ensuring a 16-byte alignment of the frame.
+    auto MMO =
+        MF.getMachineMemOperand(MPO, MachineMemOperand::MOStore, MemTy,
+                                commonAlignment(Align(16), LocMemOffset));
+
+    Register ExtReg = extendRegister(ValVReg, VA);
+    MIRBuilder.buildStore(ExtReg, Addr, *MMO);
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
@@ -84,6 +108,11 @@ struct LoongArchOutgoingValueHandler
 
 private:
   MachineInstrBuilder MIB;
+
+  // Cache the SP register vreg if we need it more than once in this call site.
+  Register SPReg;
+
+  const LoongArchSubtarget &Subtarget;
 };
 
 } // namespace
@@ -160,18 +189,27 @@ public:
 struct LoongArchIncomingValueHandler
     : public CallLowering::IncomingValueHandler {
   LoongArchIncomingValueHandler(MachineIRBuilder &B, MachineRegisterInfo &MRI)
-      : IncomingValueHandler(B, MRI) {}
+      : IncomingValueHandler(B, MRI),
+        Subtarget(MIRBuilder.getMF().getSubtarget<LoongArchSubtarget>()) {}
 
   Register getStackAddress(uint64_t MemSize, int64_t Offset,
                            MachinePointerInfo &MPO,
                            ISD::ArgFlagsTy Flags) override {
-    llvm_unreachable("not implemented");
+    MachineFrameInfo &MFI = MIRBuilder.getMF().getFrameInfo();
+
+    int FI = MFI.CreateFixedObject(MemSize, Offset, /*Immutable=*/true);
+    MPO = MachinePointerInfo::getFixedStack(MIRBuilder.getMF(), FI);
+    return MIRBuilder.buildFrameIndex(LLT::pointer(0, Subtarget.getGRLen()), FI)
+        .getReg(0);
   }
 
   void assignValueToAddress(Register ValVReg, Register Addr, LLT MemTy,
                             const MachinePointerInfo &MPO,
                             const CCValAssign &VA) override {
-    llvm_unreachable("not implemented");
+    MachineFunction &MF = MIRBuilder.getMF();
+    auto MMO = MF.getMachineMemOperand(MPO, MachineMemOperand::MOLoad, MemTy,
+                                       inferAlignFromPtrInfo(MF, MPO));
+    MIRBuilder.buildLoad(ValVReg, Addr, *MMO);
   }
 
   void assignValueToReg(Register ValVReg, Register PhysReg,
@@ -184,6 +222,9 @@ struct LoongArchIncomingValueHandler
   /// parameters (it's a basic-block live-in), and a call instruction
   /// (it's an implicit-def of the BL).
   virtual void markPhysRegUsed(MCRegister PhysReg) = 0;
+
+private:
+  const LoongArchSubtarget &Subtarget;
 };
 
 struct LoongArchFormalArgHandler : public LoongArchIncomingValueHandler {
