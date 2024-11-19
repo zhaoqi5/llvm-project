@@ -43,5 +43,10 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
         .clampScalar(BigTyIdx, sGRLen, sGRLen);
   }
 
+  getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR})
+      .legalFor({sGRLen})
+      .widenScalarToNextPow2(0)
+      .clampScalar(0, sGRLen, sGRLen);
+
   getLegacyLegalizerInfo().computeTables();
 }
