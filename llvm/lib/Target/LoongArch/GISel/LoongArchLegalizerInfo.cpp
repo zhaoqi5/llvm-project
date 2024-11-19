@@ -33,6 +33,11 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
 
   getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT}).maxScalar(0, sGRLen);
 
+  getActionDefinitionsBuilder(G_SEXT_INREG)
+      .legalFor({sGRLen})
+      .maxScalar(0, sGRLen)
+      .lower();
+
   for (unsigned Op : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
     unsigned BigTyIdx = Op == G_MERGE_VALUES ? 0 : 1;
     unsigned LitTyIdx = Op == G_MERGE_VALUES ? 1 : 0;
@@ -46,6 +51,12 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
   getActionDefinitionsBuilder({G_ADD, G_SUB, G_AND, G_OR, G_XOR})
       .legalFor({sGRLen})
       .widenScalarToNextPow2(0)
+      .clampScalar(0, sGRLen, sGRLen);
+
+  getActionDefinitionsBuilder({G_SHL, G_LSHR, G_ASHR})
+      .legalFor({{sGRLen, sGRLen}})
+      .widenScalarToNextPow2(0)
+      .clampScalar(1, sGRLen, sGRLen)
       .clampScalar(0, sGRLen, sGRLen);
 
   getLegacyLegalizerInfo().computeTables();
