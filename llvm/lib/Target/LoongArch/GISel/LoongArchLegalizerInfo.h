@@ -21,6 +21,10 @@ namespace llvm {
 class LoongArchSubtarget;
 
 class LoongArchLegalizerInfo : public LegalizerInfo {
+  const LoongArchSubtarget &STI;
+  const unsigned GRLen;
+  const LLT sGRLen;
+
 public:
   LoongArchLegalizerInfo(const LoongArchSubtarget &ST);
 };

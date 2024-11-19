@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LoongArchLegalizerInfo.h"
+#include "LoongArchSubtarget.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -19,6 +20,28 @@
 
 using namespace llvm;
 
-LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST) {
+LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
+    : STI(ST), GRLen(STI.getGRLen()), sGRLen(LLT::scalar(GRLen)) {
+  const LLT p0 = LLT::pointer(0, GRLen);
+
+  using namespace TargetOpcode;
+
+  getActionDefinitionsBuilder({G_IMPLICIT_DEF, G_CONSTANT})
+      .legalFor({sGRLen, p0})
+      .widenScalarToNextPow2(0)
+      .clampScalar(0, sGRLen, sGRLen);
+
+  getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT}).maxScalar(0, sGRLen);
+
+  for (unsigned Op : {G_MERGE_VALUES, G_UNMERGE_VALUES}) {
+    unsigned BigTyIdx = Op == G_MERGE_VALUES ? 0 : 1;
+    unsigned LitTyIdx = Op == G_MERGE_VALUES ? 1 : 0;
+    getActionDefinitionsBuilder(Op)
+        .widenScalarToNextPow2(LitTyIdx, GRLen)
+        .widenScalarToNextPow2(BigTyIdx, GRLen)
+        .clampScalar(LitTyIdx, sGRLen, sGRLen)
+        .clampScalar(BigTyIdx, sGRLen, sGRLen);
+  }
+
   getLegacyLegalizerInfo().computeTables();
 }
