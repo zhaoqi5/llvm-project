@@ -59,5 +59,17 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
       .clampScalar(1, sGRLen, sGRLen)
       .clampScalar(0, sGRLen, sGRLen);
 
+  getActionDefinitionsBuilder(G_ICMP)
+      .legalFor({{sGRLen, sGRLen}, {sGRLen, p0}})
+      .widenScalarToNextPow2(1)
+      .clampScalar(1, sGRLen, sGRLen)
+      .clampScalar(0, sGRLen, sGRLen);
+
+  getActionDefinitionsBuilder(G_SELECT)
+      .legalFor({{sGRLen, sGRLen}, {p0, sGRLen}})
+      .widenScalarToNextPow2(0)
+      .clampScalar(0, sGRLen, sGRLen)
+      .clampScalar(1, sGRLen, sGRLen);
+
   getLegacyLegalizerInfo().computeTables();
 }
