@@ -329,6 +329,10 @@ bool LoongArchInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
     I = FirstUncondOrIndirectBr;
   }
 
+  // We can't handle Generic branch opcodes from Global ISel.
+  if (I->isPreISelOpcode())
+    return true;
+
   // Handle a single unconditional branch.
   if (NumTerminators == 1 && I->getDesc().isUnconditionalBranch()) {
     TBB = getBranchDestBlock(*I);
