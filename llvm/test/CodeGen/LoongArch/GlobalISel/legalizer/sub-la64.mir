@@ -98,3 +98,106 @@ body:             |
     PseudoRET implicit $r4
 
 ...
+---
+name:            sub_i72
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: sub_i72
+    ; CHECK: %x00:_(s64) = COPY $r4
+    ; CHECK-NEXT: %x01:_(s64) = COPY $r5
+    ; CHECK-NEXT: %y00:_(s64) = COPY $r6
+    ; CHECK-NEXT: %y01:_(s64) = COPY $r7
+    ; CHECK-NEXT: [[SUB:%[0-9]+]]:_(s64) = G_SUB %x00, %y00
+    ; CHECK-NEXT: [[ICMP:%[0-9]+]]:_(s64) = G_ICMP intpred(ult), %x00(s64), %y00
+    ; CHECK-NEXT: [[SUB1:%[0-9]+]]:_(s64) = G_SUB %x01, %y01
+    ; CHECK-NEXT: [[SUB2:%[0-9]+]]:_(s64) = G_SUB [[SUB1]], [[ICMP]]
+    ; CHECK-NEXT: $r4 = COPY [[SUB]](s64)
+    ; CHECK-NEXT: $r5 = COPY [[SUB2]](s64)
+    ; CHECK-NEXT: PseudoRET implicit $r4, implicit $r5
+    %x00:_(s64) = COPY $r4
+    %x01:_(s64) = COPY $r5
+    %y00:_(s64) = COPY $r6
+    %y01:_(s64) = COPY $r7
+    %x0:_(s128) = G_MERGE_VALUES %x00(s64), %x01
+    %y0:_(s128) = G_MERGE_VALUES %y00(s64), %y01
+    %x:_(s72) = G_TRUNC %x0(s128)
+    %y:_(s72) = G_TRUNC %y0(s128)
+    %z:_(s72) = G_SUB %x, %y
+    %z0:_(s128) = G_ANYEXT %z(s72)
+    %z00:_(s64), %z01:_(s64) = G_UNMERGE_VALUES %z0(s128)
+    $r4 = COPY %z00(s64)
+    $r5 = COPY %z01(s64)
+    PseudoRET implicit $r4, implicit $r5
+
+...
+---
+name:            sub_i128
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: sub_i128
+    ; CHECK: %lo1:_(s64) = COPY $r4
+    ; CHECK-NEXT: %hi1:_(s64) = COPY $r5
+    ; CHECK-NEXT: %lo2:_(s64) = COPY $r6
+    ; CHECK-NEXT: %hi2:_(s64) = COPY $r7
+    ; CHECK-NEXT: [[SUB:%[0-9]+]]:_(s64) = G_SUB %lo1, %lo2
+    ; CHECK-NEXT: [[ICMP:%[0-9]+]]:_(s64) = G_ICMP intpred(ult), %lo1(s64), %lo2
+    ; CHECK-NEXT: [[SUB1:%[0-9]+]]:_(s64) = G_SUB %hi1, %hi2
+    ; CHECK-NEXT: [[SUB2:%[0-9]+]]:_(s64) = G_SUB [[SUB1]], [[ICMP]]
+    ; CHECK-NEXT: $r4 = COPY [[SUB]](s64)
+    ; CHECK-NEXT: $r5 = COPY [[SUB2]](s64)
+    ; CHECK-NEXT: PseudoRET implicit $r4, implicit $r5
+    %lo1:_(s64) = COPY $r4
+    %hi1:_(s64) = COPY $r5
+    %lo2:_(s64) = COPY $r6
+    %hi2:_(s64) = COPY $r7
+    %x1:_(s128) = G_MERGE_VALUES %lo1(s64), %hi1(s64)
+    %x2:_(s128) = G_MERGE_VALUES %lo2(s64), %hi2(s64)
+    %y:_(s128) = G_SUB %x1, %x2
+    %loy:_(s64), %hiy:_(s64) = G_UNMERGE_VALUES %y(s128)
+    $r4 = COPY %loy(s64)
+    $r5 = COPY %hiy(s64)
+    PseudoRET implicit $r4, implicit $r5
+
+...
+---
+name:            sub_i192
+body:             |
+  bb.0.entry:
+    ; CHECK-LABEL: name: sub_i192
+    ; CHECK: %lo1:_(s64) = COPY $r4
+    ; CHECK-NEXT: %mid1:_(s64) = COPY $r5
+    ; CHECK-NEXT: %hi1:_(s64) = COPY $r6
+    ; CHECK-NEXT: %lo2:_(s64) = COPY $r7
+    ; CHECK-NEXT: %mid2:_(s64) = COPY $r8
+    ; CHECK-NEXT: %hi2:_(s64) = COPY $r9
+    ; CHECK-NEXT: [[SUB:%[0-9]+]]:_(s64) = G_SUB %lo1, %lo2
+    ; CHECK-NEXT: [[ICMP:%[0-9]+]]:_(s64) = G_ICMP intpred(ult), %lo1(s64), %lo2
+    ; CHECK-NEXT: [[SUB1:%[0-9]+]]:_(s64) = G_SUB %mid1, %mid2
+    ; CHECK-NEXT: [[ICMP1:%[0-9]+]]:_(s64) = G_ICMP intpred(ugt), [[SUB1]](s64), %mid1
+    ; CHECK-NEXT: [[SUB2:%[0-9]+]]:_(s64) = G_SUB [[SUB1]], [[ICMP]]
+    ; CHECK-NEXT: [[C:%[0-9]+]]:_(s64) = G_CONSTANT i64 0
+    ; CHECK-NEXT: [[ICMP2:%[0-9]+]]:_(s64) = G_ICMP intpred(eq), [[SUB1]](s64), [[C]]
+    ; CHECK-NEXT: [[AND:%[0-9]+]]:_(s64) = G_AND [[ICMP2]], [[ICMP]]
+    ; CHECK-NEXT: [[OR:%[0-9]+]]:_(s64) = G_OR [[ICMP1]], [[AND]]
+    ; CHECK-NEXT: [[SUB3:%[0-9]+]]:_(s64) = G_SUB %hi1, %hi2
+    ; CHECK-NEXT: [[SUB4:%[0-9]+]]:_(s64) = G_SUB [[SUB3]], [[OR]]
+    ; CHECK-NEXT: $r4 = COPY [[SUB]](s64)
+    ; CHECK-NEXT: $r5 = COPY [[SUB2]](s64)
+    ; CHECK-NEXT: $r6 = COPY [[SUB4]](s64)
+    ; CHECK-NEXT: PseudoRET implicit $r4, implicit $r5, implicit $r6
+    %lo1:_(s64) = COPY $r4
+    %mid1:_(s64) = COPY $r5
+    %hi1:_(s64) = COPY $r6
+    %lo2:_(s64) = COPY $r7
+    %mid2:_(s64) = COPY $r8
+    %hi2:_(s64) = COPY $r9
+    %x1:_(s192) = G_MERGE_VALUES %lo1(s64), %mid1(s64), %hi1(s64)
+    %x2:_(s192) = G_MERGE_VALUES %lo2(s64), %mid2(s64), %hi2(s64)
+    %y:_(s192) = G_SUB %x1, %x2
+    %lo:_(s64), %mid:_(s64), %hi:_(s64) = G_UNMERGE_VALUES %y(s192)
+    $r4 = COPY %lo(s64)
+    $r5 = COPY %mid(s64)
+    $r6 = COPY %hi(s64)
+    PseudoRET implicit $r4, implicit $r5, implicit $r6
+
+...

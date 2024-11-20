@@ -71,5 +71,7 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
       .clampScalar(0, sGRLen, sGRLen)
       .clampScalar(1, sGRLen, sGRLen);
 
+  getActionDefinitionsBuilder({G_UADDO, G_USUBO, G_UADDE, G_USUBE}).lower();
+
   getLegacyLegalizerInfo().computeTables();
 }
