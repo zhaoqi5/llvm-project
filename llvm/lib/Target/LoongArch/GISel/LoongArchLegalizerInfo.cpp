@@ -31,6 +31,8 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
       .widenScalarToNextPow2(0)
       .clampScalar(0, sGRLen, sGRLen);
 
+  getActionDefinitionsBuilder(G_GLOBAL_VALUE).legalFor({p0});
+
   getActionDefinitionsBuilder({G_ANYEXT, G_SEXT, G_ZEXT}).maxScalar(0, sGRLen);
 
   getActionDefinitionsBuilder(G_SEXT_INREG)
