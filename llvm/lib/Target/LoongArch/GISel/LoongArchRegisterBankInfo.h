@@ -33,6 +33,9 @@ protected:
 class LoongArchRegisterBankInfo final : public LoongArchGenRegisterBankInfo {
 public:
   LoongArchRegisterBankInfo(unsigned HwMode);
+
+  const InstructionMapping &
+  getInstrMapping(const MachineInstr &MI) const override;
 };
 } // end namespace llvm
 

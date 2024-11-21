@@ -21,7 +21,104 @@
 #define GET_TARGET_REGBANK_IMPL
 #include "LoongArchGenRegisterBank.inc"
 
+namespace llvm {
+namespace LoongArch {
+
+const RegisterBankInfo::PartialMapping PartMappings[] = {
+    {0, 32, GPRBRegBank},
+    {0, 64, GPRBRegBank},
+};
+
+enum PartialMappingIdx {
+  PMI_GPRB32 = 0,
+  PMI_GPRB64 = 1,
+};
+
+const RegisterBankInfo::ValueMapping ValueMappings[] = {
+    // Invalid value mapping.
+    {nullptr, 0},
+    // Maximum 3 GPR operands; 32 bit.
+    {&PartMappings[PMI_GPRB32], 1},
+    {&PartMappings[PMI_GPRB32], 1},
+    {&PartMappings[PMI_GPRB32], 1},
+    // Maximum 3 GPR operands; 64 bit.
+    {&PartMappings[PMI_GPRB64], 1},
+    {&PartMappings[PMI_GPRB64], 1},
+    {&PartMappings[PMI_GPRB64], 1},
+};
+
+enum ValueMappingIdx {
+  InvalidIdx = 0,
+  GPRB32Idx = 1,
+  GPRB64Idx = 4,
+};
+} // namespace LoongArch
+} // namespace llvm
+
 using namespace llvm;
 
 LoongArchRegisterBankInfo::LoongArchRegisterBankInfo(unsigned HwMode)
     : LoongArchGenRegisterBankInfo(HwMode) {}
+
+const RegisterBankInfo::InstructionMapping &
+LoongArchRegisterBankInfo::getInstrMapping(const MachineInstr &MI) const {
+  const unsigned Opc = MI.getOpcode();
+
+  // Try the default logic for non-generic instructions that are either copies
+  // or already have some operands assigned to banks.
+  if (!isPreISelGenericOpcode(Opc) || Opc == TargetOpcode::G_PHI) {
+    const InstructionMapping &Mapping = getInstrMappingImpl(MI);
+    if (Mapping.isValid())
+      return Mapping;
+  }
+
+  unsigned GPRSize = getMaximumSize(LoongArch::GPRBRegBankID);
+  assert((GPRSize == 32 || GPRSize == 64) && "Unexpected GPR size");
+
+  unsigned NumOperands = MI.getNumOperands();
+  const ValueMapping *GPRValueMapping =
+      &LoongArch::ValueMappings[GPRSize == 64 ? LoongArch::GPRB64Idx
+                                              : LoongArch::GPRB32Idx];
+  const ValueMapping *OperandsMapping = GPRValueMapping;
+
+  switch (Opc) {
+  case TargetOpcode::G_ADD:
+  case TargetOpcode::G_SUB:
+  case TargetOpcode::G_AND:
+  case TargetOpcode::G_OR:
+  case TargetOpcode::G_XOR:
+  case TargetOpcode::G_SHL:
+  case TargetOpcode::G_LSHR:
+  case TargetOpcode::G_ASHR:
+  case TargetOpcode::G_ANYEXT:
+  case TargetOpcode::G_SEXT:
+  case TargetOpcode::G_ZEXT:
+  case TargetOpcode::G_TRUNC:
+    break;
+  case TargetOpcode::G_CONSTANT:
+  case TargetOpcode::G_GLOBAL_VALUE:
+  case TargetOpcode::G_BRCOND:
+    OperandsMapping = getOperandsMapping({GPRValueMapping, nullptr});
+    break;
+  case TargetOpcode::G_BR:
+    OperandsMapping = getOperandsMapping({nullptr});
+    break;
+  case TargetOpcode::G_ICMP:
+    OperandsMapping = getOperandsMapping(
+        {GPRValueMapping, nullptr, GPRValueMapping, GPRValueMapping});
+    break;
+  case TargetOpcode::G_SEXT_INREG:
+    OperandsMapping =
+        getOperandsMapping({GPRValueMapping, GPRValueMapping, nullptr});
+    break;
+  case TargetOpcode::G_SELECT:
+    OperandsMapping = getOperandsMapping(
+        {GPRValueMapping, GPRValueMapping, GPRValueMapping, GPRValueMapping});
+    break;
+  default:
+    return getInvalidInstructionMapping();
+  }
+
+  return getInstructionMapping(DefaultMappingID, /*Cost=*/1, OperandsMapping,
+                               NumOperands);
+}
