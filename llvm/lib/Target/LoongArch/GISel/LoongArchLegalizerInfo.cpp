@@ -23,6 +23,9 @@ using namespace llvm;
 LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
     : STI(ST), GRLen(STI.getGRLen()), sGRLen(LLT::scalar(GRLen)) {
   const LLT p0 = LLT::pointer(0, GRLen);
+  const LLT s8 = LLT::scalar(8);
+  const LLT s16 = LLT::scalar(16);
+  const LLT s32 = LLT::scalar(32);
 
   using namespace TargetOpcode;
 
@@ -73,7 +76,34 @@ LoongArchLegalizerInfo::LoongArchLegalizerInfo(const LoongArchSubtarget &ST)
       .clampScalar(0, sGRLen, sGRLen)
       .clampScalar(1, sGRLen, sGRLen);
 
+  getActionDefinitionsBuilder(G_PTR_ADD).legalFor({{p0, sGRLen}});
+
   getActionDefinitionsBuilder({G_UADDO, G_USUBO, G_UADDE, G_USUBE}).lower();
+
+  // Return the alignment needed for memory ops. If unaligned memory accesses
+  // is allowed, we only require byte alignment. Otherwise, we need the memory
+  // op to be natively aligned.
+  auto getScalarMemAlign = [&ST](unsigned Size) {
+    return ST.hasUAL() ? 8 : Size;
+  };
+
+  getActionDefinitionsBuilder({G_LOAD, G_STORE})
+      .legalForTypesWithMemDesc({{sGRLen, p0, s8, getScalarMemAlign(8)},
+                                 {sGRLen, p0, s16, getScalarMemAlign(16)},
+                                 {sGRLen, p0, s32, getScalarMemAlign(32)},
+                                 {sGRLen, p0, sGRLen, getScalarMemAlign(GRLen)},
+                                 {p0, p0, sGRLen, getScalarMemAlign(GRLen)}})
+      .clampScalar(0, sGRLen, sGRLen)
+      .lower();
+
+  auto &ExtLoadActions =
+      getActionDefinitionsBuilder({G_SEXTLOAD, G_ZEXTLOAD})
+          .legalForTypesWithMemDesc({{sGRLen, p0, s8, getScalarMemAlign(8)},
+                                     {sGRLen, p0, s16, getScalarMemAlign(16)}});
+  if (GRLen == 64)
+    ExtLoadActions.legalForTypesWithMemDesc(
+        {{sGRLen, p0, s32, getScalarMemAlign(32)}});
+  ExtLoadActions.clampScalar(0, sGRLen, sGRLen).lower();
 
   getActionDefinitionsBuilder(G_PHI)
       .legalFor({p0, sGRLen})
