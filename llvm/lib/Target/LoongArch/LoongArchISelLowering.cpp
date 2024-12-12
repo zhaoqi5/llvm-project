@@ -1854,10 +1854,9 @@ SDValue LoongArchTargetLowering::lowerGlobalAddress(SDValue Op,
   return getAddr(N, DAG, CM, GV->isDSOLocal());
 }
 
-SDValue LoongArchTargetLowering::getStaticTLSAddr(GlobalAddressSDNode *N,
-                                                  SelectionDAG &DAG,
-                                                  unsigned Opc, bool UseGOT,
-                                                  bool Large) const {
+SDValue LoongArchTargetLowering::getStaticTLSAddr(
+    GlobalAddressSDNode *N, SelectionDAG &DAG, unsigned Opc, bool UseGOT,
+    bool Large, bool IsNormalOrMediumLE) const {
   SDLoc DL(N);
   EVT Ty = getPointerTy(DAG.getDataLayout());
   MVT GRLenVT = Subtarget.getGRLenVT();
@@ -1869,6 +1868,10 @@ SDValue LoongArchTargetLowering::getStaticTLSAddr(GlobalAddressSDNode *N,
   SDValue Offset = Large
                        ? SDValue(DAG.getMachineNode(Opc, DL, Ty, Tmp, Addr), 0)
                        : SDValue(DAG.getMachineNode(Opc, DL, Ty, Addr), 0);
+
+  if (IsNormalOrMediumLE)
+    return Offset;
+
   if (UseGOT) {
     // Mark the load instruction as invariant to enable hoisting in MachineLICM.
     MachineFunction &MF = DAG.getMachineFunction();
@@ -1989,7 +1992,7 @@ LoongArchTargetLowering::lowerGlobalTLSAddress(SDValue Op,
     //
     // This node doesn't need an extra argument for the large code model.
     return getStaticTLSAddr(N, DAG, LoongArch::PseudoLA_TLS_LE,
-                            /*UseGOT=*/false);
+                            /*UseGOT=*/false, /*Large=*/false, !Large);
   }
 
   return getTLSDescAddr(N, DAG,
