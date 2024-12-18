@@ -59,11 +59,6 @@ private:
   bool expandMBB(MachineBasicBlock &MBB);
   bool expandMI(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
                 MachineBasicBlock::iterator &NextMBBI);
-  bool expandPcalau12iInstPair(MachineBasicBlock &MBB,
-                               MachineBasicBlock::iterator MBBI,
-                               MachineBasicBlock::iterator &NextMBBI,
-                               unsigned FlagsHi, unsigned SecondOpcode,
-                               unsigned FlagsLo);
   bool expandLargeAddressLoad(MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator MBBI,
                               MachineBasicBlock::iterator &NextMBBI,
@@ -179,17 +174,25 @@ bool LoongArchPreRAExpandPseudo::expandMI(
   return false;
 }
 
-bool LoongArchPreRAExpandPseudo::expandPcalau12iInstPair(
-    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
-    MachineBasicBlock::iterator &NextMBBI, unsigned FlagsHi,
-    unsigned SecondOpcode, unsigned FlagsLo) {
+static bool expandPcalau12iInstPair(MachineBasicBlock &MBB,
+                                    MachineBasicBlock::iterator MBBI,
+                                    MachineBasicBlock::iterator &NextMBBI,
+                                    unsigned FlagsHi, unsigned SecondOpcode,
+                                    unsigned FlagsLo) {
   MachineFunction *MF = MBB.getParent();
   MachineInstr &MI = *MBBI;
   DebugLoc DL = MI.getDebugLoc();
+  const LoongArchInstrInfo *TII = static_cast<const LoongArchInstrInfo *>(
+      MF->getSubtarget().getInstrInfo());
+
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+  bool EnableRelax = STI.hasFeature(LoongArch::FeatureRelax);
 
   Register DestReg = MI.getOperand(0).getReg();
   Register ScratchReg =
-      MF->getRegInfo().createVirtualRegister(&LoongArch::GPRRegClass);
+      EnableRelax
+          ? DestReg
+          : MF->getRegInfo().createVirtualRegister(&LoongArch::GPRRegClass);
   MachineOperand &Symbol = MI.getOperand(1);
 
   BuildMI(MBB, MBBI, DL, TII->get(LoongArch::PCALAU12I), ScratchReg)
@@ -319,11 +322,18 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressPcrel(
     return expandLargeAddressLoad(MBB, MBBI, NextMBBI, LoongArch::ADD_D,
                                   LoongArchII::MO_PCREL_LO);
 
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   // Code Sequence:
   // pcalau12i $rd, %pc_hi20(sym)
   // addi.w/d $rd, $rd, %pc_lo12(sym)
-  MachineFunction *MF = MBB.getParent();
-  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
   unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
   return expandPcalau12iInstPair(MBB, MBBI, NextMBBI, LoongArchII::MO_PCREL_HI,
                                  SecondOpcode, LoongArchII::MO_PCREL_LO);
@@ -338,11 +348,18 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressGot(
     return expandLargeAddressLoad(MBB, MBBI, NextMBBI, LoongArch::LDX_D,
                                   LoongArchII::MO_GOT_PC_HI);
 
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   // Code Sequence:
   // pcalau12i $rd, %got_pc_hi20(sym)
   // ld.w/d $rd, $rd, %got_pc_lo12(sym)
-  MachineFunction *MF = MBB.getParent();
-  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
   unsigned SecondOpcode = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
   return expandPcalau12iInstPair(MBB, MBBI, NextMBBI, LoongArchII::MO_GOT_PC_HI,
                                  SecondOpcode, LoongArchII::MO_GOT_PC_LO);
@@ -374,21 +391,29 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSLE(
   MachineOperand &Symbol = MI.getOperand(1);
 
   if (!Large) {
-    BuildMI(MBB, MBBI, DL, TII->get(LoongArch::LU12I_W), Part1)
-        .addDisp(Symbol, 0, LoongArchII::MO_LE_HI_R);
-
     const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+    bool EnableRelax = STI.hasFeature(LoongArch::FeatureRelax);
+
+    BuildMI(MBB, MBBI, DL, TII->get(LoongArch::LU12I_W), Part1)
+        .addDisp(Symbol, 0,
+                 EnableRelax ? LoongArchII::MO_LE_HI_R | LoongArchII::MO_RELAX
+                             : LoongArchII::MO_LE_HI_R);
+
     unsigned AddOp = STI.is64Bit() ? LoongArch::PseudoAddTPRel_D
                                    : LoongArch::PseudoAddTPRel_W;
     BuildMI(MBB, MBBI, DL, TII->get(AddOp), Parts01)
         .addReg(Part1, RegState::Kill)
         .addReg(LoongArch::R2)
-        .addDisp(Symbol, 0, LoongArchII::MO_LE_ADD_R);
+        .addDisp(Symbol, 0,
+                 EnableRelax ? LoongArchII::MO_LE_ADD_R | LoongArchII::MO_RELAX
+                             : LoongArchII::MO_LE_ADD_R);
 
     unsigned AddiOp = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
     BuildMI(MBB, MBBI, DL, TII->get(AddiOp), DestReg)
         .addReg(Parts01, RegState::Kill)
-        .addDisp(Symbol, 0, LoongArchII::MO_LE_LO_R);
+        .addDisp(Symbol, 0,
+                 EnableRelax ? LoongArchII::MO_LE_LO_R | LoongArchII::MO_RELAX
+                             : LoongArchII::MO_LE_LO_R);
   } else {
     BuildMI(MBB, MBBI, DL, TII->get(LoongArch::LU12I_W), Part1)
         .addDisp(Symbol, 0, LoongArchII::MO_LE_HI);
@@ -422,11 +447,18 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSIE(
     return expandLargeAddressLoad(MBB, MBBI, NextMBBI, LoongArch::LDX_D,
                                   LoongArchII::MO_IE_PC_LO);
 
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   // Code Sequence:
   // pcalau12i $rd, %ie_pc_hi20(sym)
   // ld.w/d $rd, $rd, %ie_pc_lo12(sym)
-  MachineFunction *MF = MBB.getParent();
-  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
   unsigned SecondOpcode = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
   return expandPcalau12iInstPair(MBB, MBBI, NextMBBI, LoongArchII::MO_IE_PC_HI,
                                  SecondOpcode, LoongArchII::MO_IE_PC_LO);
@@ -441,11 +473,18 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSLD(
     return expandLargeAddressLoad(MBB, MBBI, NextMBBI, LoongArch::ADD_D,
                                   LoongArchII::MO_LD_PC_HI);
 
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   // Code Sequence:
   // pcalau12i $rd, %ld_pc_hi20(sym)
   // addi.w/d $rd, $rd, %got_pc_lo12(sym)
-  MachineFunction *MF = MBB.getParent();
-  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
   unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
   return expandPcalau12iInstPair(MBB, MBBI, NextMBBI, LoongArchII::MO_LD_PC_HI,
                                  SecondOpcode, LoongArchII::MO_GOT_PC_LO);
@@ -460,11 +499,18 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSGD(
     return expandLargeAddressLoad(MBB, MBBI, NextMBBI, LoongArch::ADD_D,
                                   LoongArchII::MO_GD_PC_HI);
 
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   // Code Sequence:
   // pcalau12i $rd, %gd_pc_hi20(sym)
   // addi.w/d $rd, $rd, %got_pc_lo12(sym)
-  MachineFunction *MF = MBB.getParent();
-  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
   unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
   return expandPcalau12iInstPair(MBB, MBBI, NextMBBI, LoongArchII::MO_GD_PC_HI,
                                  SecondOpcode, LoongArchII::MO_GOT_PC_LO);
@@ -476,8 +522,14 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSDesc(
   MachineFunction *MF = MBB.getParent();
   MachineInstr &MI = *MBBI;
   DebugLoc DL = MI.getDebugLoc();
-
   const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // If linker relaxation enabled, it should be expanded later in
+  // LoongArchExpandPseudo pass to avoid being separated by instruction
+  // scheduling.
+  if (!Large && STI.hasFeature(LoongArch::FeatureRelax))
+    return false;
+
   unsigned ADD = STI.is64Bit() ? LoongArch::ADD_D : LoongArch::ADD_W;
   unsigned ADDI = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
   unsigned LD = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
@@ -526,8 +578,8 @@ bool LoongArchPreRAExpandPseudo::expandLoadAddressTLSDesc(
     // pcalau12i $a0, %desc_pc_hi20(sym)
     // addi.w/d  $a0, $a0, %desc_pc_lo12(sym)
     // ld.w/d    $ra, $a0, %desc_ld(sym)
-    // jirl      $ra, $ra, %desc_ld(sym)
-    // add.d     $dst, $a0, $tp
+    // jirl      $ra, $ra, %desc_call(sym)
+    // add.w/d   $dst, $a0, $tp
     BuildMI(MBB, MBBI, DL, TII->get(ADDI), LoongArch::R4)
         .addReg(Tmp1Reg)
         .addDisp(Symbol, 0, LoongArchII::MO_DESC_PC_LO);
@@ -660,6 +712,24 @@ private:
                 MachineBasicBlock::iterator &NextMBBI);
   bool expandCopyCFR(MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
                      MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressPcrel(MachineBasicBlock &MBB,
+                              MachineBasicBlock::iterator MBBI,
+                              MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressGot(MachineBasicBlock &MBB,
+                            MachineBasicBlock::iterator MBBI,
+                            MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressTLSIE(MachineBasicBlock &MBB,
+                              MachineBasicBlock::iterator MBBI,
+                              MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressTLSLD(MachineBasicBlock &MBB,
+                              MachineBasicBlock::iterator MBBI,
+                              MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressTLSGD(MachineBasicBlock &MBB,
+                              MachineBasicBlock::iterator MBBI,
+                              MachineBasicBlock::iterator &NextMBBI);
+  bool expandLoadAddressTLSDesc(MachineBasicBlock &MBB,
+                                MachineBasicBlock::iterator MBBI,
+                                MachineBasicBlock::iterator &NextMBBI);
   bool expandFunctionCALL(MachineBasicBlock &MBB,
                           MachineBasicBlock::iterator MBBI,
                           MachineBasicBlock::iterator &NextMBBI,
@@ -698,6 +768,18 @@ bool LoongArchExpandPseudo::expandMI(MachineBasicBlock &MBB,
   switch (MBBI->getOpcode()) {
   case LoongArch::PseudoCopyCFR:
     return expandCopyCFR(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_PCREL:
+    return expandLoadAddressPcrel(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_GOT:
+    return expandLoadAddressGot(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_TLS_IE:
+    return expandLoadAddressTLSIE(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_TLS_LD:
+    return expandLoadAddressTLSLD(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_TLS_GD:
+    return expandLoadAddressTLSGD(MBB, MBBI, NextMBBI);
+  case LoongArch::PseudoLA_TLS_DESC:
+    return expandLoadAddressTLSDesc(MBB, MBBI, NextMBBI);
   case LoongArch::PseudoCALL_MEDIUM:
     return expandFunctionCALL(MBB, MBBI, NextMBBI, /*IsTailCall=*/false);
   case LoongArch::PseudoTAIL_MEDIUM:
@@ -760,6 +842,121 @@ bool LoongArchExpandPseudo::expandCopyCFR(
   return true;
 }
 
+bool LoongArchExpandPseudo::expandLoadAddressPcrel(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // Code Sequence:
+  // pcalau12i $rd, %pc_hi20(sym)
+  // addi.w/d $rd, $rd, %pc_lo12(sym)
+  unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
+  return expandPcalau12iInstPair(
+      MBB, MBBI, NextMBBI, LoongArchII::MO_PCREL_HI | LoongArchII::MO_RELAX,
+      SecondOpcode, LoongArchII::MO_PCREL_LO | LoongArchII::MO_RELAX);
+}
+
+bool LoongArchExpandPseudo::expandLoadAddressGot(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // Code Sequence:
+  // pcalau12i $rd, %got_pc_hi20(sym)
+  // ld.w/d $rd, $rd, %got_pc_lo12(sym)
+  unsigned SecondOpcode = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
+  return expandPcalau12iInstPair(
+      MBB, MBBI, NextMBBI, LoongArchII::MO_GOT_PC_HI | LoongArchII::MO_RELAX,
+      SecondOpcode, LoongArchII::MO_GOT_PC_LO | LoongArchII::MO_RELAX);
+}
+
+bool LoongArchExpandPseudo::expandLoadAddressTLSIE(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // Code Sequence:
+  // pcalau12i $rd, %ie_pc_hi20(sym)
+  // ld.w/d $rd, $rd, %ie_pc_lo12(sym)
+  unsigned SecondOpcode = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
+  return expandPcalau12iInstPair(
+      MBB, MBBI, NextMBBI, LoongArchII::MO_IE_PC_HI | LoongArchII::MO_RELAX,
+      SecondOpcode, LoongArchII::MO_IE_PC_LO | LoongArchII::MO_RELAX);
+}
+
+bool LoongArchExpandPseudo::expandLoadAddressTLSLD(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // Code Sequence:
+  // pcalau12i $rd, %ld_pc_hi20(sym)
+  // addi.w/d $rd, $rd, %got_pc_lo12(sym)
+  unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
+  return expandPcalau12iInstPair(
+      MBB, MBBI, NextMBBI, LoongArchII::MO_LD_PC_HI | LoongArchII::MO_RELAX,
+      SecondOpcode, LoongArchII::MO_GOT_PC_LO | LoongArchII::MO_RELAX);
+}
+
+bool LoongArchExpandPseudo::expandLoadAddressTLSGD(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+
+  // Code Sequence:
+  // pcalau12i $rd, %gd_pc_hi20(sym)
+  // addi.w/d $rd, $rd, %got_pc_lo12(sym)
+  unsigned SecondOpcode = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
+  return expandPcalau12iInstPair(
+      MBB, MBBI, NextMBBI, LoongArchII::MO_GD_PC_HI | LoongArchII::MO_RELAX,
+      SecondOpcode, LoongArchII::MO_GOT_PC_LO | LoongArchII::MO_RELAX);
+}
+
+bool LoongArchExpandPseudo::expandLoadAddressTLSDesc(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
+    MachineBasicBlock::iterator &NextMBBI) {
+  MachineFunction *MF = MBB.getParent();
+  MachineInstr &MI = *MBBI;
+  DebugLoc DL = MI.getDebugLoc();
+
+  const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+  unsigned ADD = STI.is64Bit() ? LoongArch::ADD_D : LoongArch::ADD_W;
+  unsigned ADDI = STI.is64Bit() ? LoongArch::ADDI_D : LoongArch::ADDI_W;
+  unsigned LD = STI.is64Bit() ? LoongArch::LD_D : LoongArch::LD_W;
+
+  Register DestReg = MI.getOperand(0).getReg();
+  MachineOperand &Symbol = MI.getOperand(1);
+
+  // Code Sequence:
+  // pcalau12i $dst, %desc_pc_hi20(sym)
+  // addi.w/d  $a0, $dst, %desc_pc_lo12(sym)
+  // ld.w/d    $ra, $a0, %desc_ld(sym)
+  // jirl      $ra, $ra, %desc_call(sym)
+  // add.w/d   $dst, $a0, $tp
+  BuildMI(MBB, MBBI, DL, TII->get(LoongArch::PCALAU12I), DestReg)
+      .addDisp(Symbol, 0, LoongArchII::MO_DESC_PC_HI | LoongArchII::MO_RELAX);
+  BuildMI(MBB, MBBI, DL, TII->get(ADDI), LoongArch::R4)
+      .addReg(DestReg)
+      .addDisp(Symbol, 0, LoongArchII::MO_DESC_PC_LO | LoongArchII::MO_RELAX);
+  BuildMI(MBB, MBBI, DL, TII->get(LD), LoongArch::R1)
+      .addReg(LoongArch::R4)
+      .addDisp(Symbol, 0, LoongArchII::MO_DESC_LD | LoongArchII::MO_RELAX);
+  BuildMI(MBB, MBBI, DL, TII->get(LoongArch::PseudoDESC_CALL), LoongArch::R1)
+      .addReg(LoongArch::R1)
+      .addDisp(Symbol, 0, LoongArchII::MO_DESC_CALL | LoongArchII::MO_RELAX);
+  BuildMI(MBB, MBBI, DL, TII->get(ADD), DestReg)
+      .addReg(LoongArch::R4)
+      .addReg(LoongArch::R2);
+
+  MI.eraseFromParent();
+  return true;
+}
+
 bool LoongArchExpandPseudo::expandFunctionCALL(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI,
     MachineBasicBlock::iterator &NextMBBI, bool IsTailCall) {
@@ -790,10 +987,15 @@ bool LoongArchExpandPseudo::expandFunctionCALL(
     CALL =
         BuildMI(MBB, MBBI, DL, TII->get(Opcode)).addReg(ScratchReg).addImm(0);
 
+    unsigned MO = LoongArchII::MO_CALL36;
+    const auto &STI = MF->getSubtarget<LoongArchSubtarget>();
+    bool EnableRelax = STI.hasFeature(LoongArch::FeatureRelax);
+
     if (Func.isSymbol())
-      MIB.addExternalSymbol(Func.getSymbolName(), LoongArchII::MO_CALL36);
+      MIB.addExternalSymbol(Func.getSymbolName(),
+                            EnableRelax ? MO | LoongArchII::MO_RELAX : MO);
     else
-      MIB.addDisp(Func, 0, LoongArchII::MO_CALL36);
+      MIB.addDisp(Func, 0, EnableRelax ? MO | LoongArchII::MO_RELAX : MO);
     break;
   }
   }

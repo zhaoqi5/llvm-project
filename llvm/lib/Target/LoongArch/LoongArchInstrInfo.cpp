@@ -618,7 +618,8 @@ bool LoongArchInstrInfo::reverseBranchCondition(
 
 std::pair<unsigned, unsigned>
 LoongArchInstrInfo::decomposeMachineOperandsTargetFlags(unsigned TF) const {
-  return std::make_pair(TF, 0u);
+  const unsigned Mask = LoongArchII::MO_DIRECT_FLAG_MASK;
+  return std::make_pair(TF & Mask, TF & ~Mask);
 }
 
 ArrayRef<std::pair<unsigned, const char *>>
@@ -644,17 +645,26 @@ LoongArchInstrInfo::getSerializableDirectMachineOperandTargetFlags() const {
       {MO_IE_PC_LO, "loongarch-ie-pc-lo"},
       {MO_IE_PC64_LO, "loongarch-ie-pc64-lo"},
       {MO_IE_PC64_HI, "loongarch-ie-pc64-hi"},
+      {MO_LD_PC_HI, "loongarch-ld-pc-hi"},
+      {MO_GD_PC_HI, "loongarch-gd-pc-hi"},
+      {MO_CALL36, "loongarch-call36"},
       {MO_DESC_PC_HI, "loongarch-desc-pc-hi"},
       {MO_DESC_PC_LO, "loongarch-desc-pc-lo"},
       {MO_DESC64_PC_LO, "loongarch-desc64-pc-lo"},
       {MO_DESC64_PC_HI, "loongarch-desc64-pc-hi"},
       {MO_DESC_LD, "loongarch-desc-ld"},
       {MO_DESC_CALL, "loongarch-desc-call"},
-      {MO_LD_PC_HI, "loongarch-ld-pc-hi"},
-      {MO_GD_PC_HI, "loongarch-gd-pc-hi"},
       {MO_LE_HI_R, "loongarch-le-hi-r"},
       {MO_LE_ADD_R, "loongarch-le-add-r"},
       {MO_LE_LO_R, "loongarch-le-lo-r"}};
+  return ArrayRef(TargetFlags);
+}
+
+ArrayRef<std::pair<unsigned, const char *>>
+LoongArchInstrInfo::getSerializableBitmaskMachineOperandTargetFlags() const {
+  using namespace LoongArchII;
+  static const std::pair<unsigned, const char *> TargetFlags[] = {
+      {MO_RELAX, "loongarch-relax"}};
   return ArrayRef(TargetFlags);
 }
 

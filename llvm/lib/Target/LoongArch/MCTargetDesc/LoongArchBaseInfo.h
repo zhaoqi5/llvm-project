@@ -58,6 +58,13 @@ enum {
   MO_LE_ADD_R,
   MO_LE_LO_R,
   // TODO: Add more flags.
+
+  // Used to differentiate between target-specific "direct" flags and "bitmask"
+  // flags. A machine operand can only have one "direct" flag, but can have
+  // multiple "bitmask" flags.
+  MO_DIRECT_FLAG_MASK = 0x3f,
+
+  MO_RELAX = 0x40
 };
 
 // Target-specific flags of LAInst.

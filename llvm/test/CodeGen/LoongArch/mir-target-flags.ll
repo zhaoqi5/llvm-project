@@ -1,7 +1,18 @@
-; RUN: llc --mtriple=loongarch64 -mattr=+d --stop-after loongarch-prera-expand-pseudo \
-; RUN:     --relocation-model=pic %s -o %t.mir
-; RUN: llc --mtriple=loongarch64 -mattr=+d --run-pass loongarch-prera-expand-pseudo \
-; RUN:     %t.mir -o - | FileCheck %s
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --stop-after loongarch-prera-expand-pseudo \
+; RUN:     --relocation-model=pic --code-model=small %s -o %t.mir
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --run-pass loongarch-expand-pseudo \
+; RUN:     %t.mir -o - | FileCheck %s --check-prefixes=CHECK,SMALL
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --stop-after loongarch-prera-expand-pseudo \
+; RUN:     --relocation-model=pic --enable-tlsdesc --code-model=small %s -o %t.desc.mir
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --run-pass loongarch-expand-pseudo \
+; RUN:     %t.desc.mir -o - | FileCheck %s --check-prefixes=CHECK,DESC
+
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --stop-after loongarch-prera-expand-pseudo \
+; RUN:     --relocation-model=pic --code-model=medium %s -o %t.med.mir
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --stop-before loongarch-expand-pseudo \
+; RUN:     --code-model=medium %t.med.mir -o - | FileCheck %s --check-prefixes=CHECK,SMALL
+; RUN: llc --mtriple=loongarch64 -mattr=+d,-relax --run-pass loongarch-expand-pseudo \
+; RUN:     --code-model=medium %t.med.mir -o - | FileCheck %s --check-prefixes=CALL36
 
 ;; This tests the LoongArch-specific serialization and deserialization of
 ;; `target-flags(...)`
@@ -22,17 +33,27 @@ define void @caller() nounwind {
 ; CHECK-NEXT: target-flags(loongarch-got-pc-lo) @g_e
 ; CHECK:      target-flags(loongarch-pcrel-hi) @g_i
 ; CHECK-NEXT: target-flags(loongarch-pcrel-lo) @g_i
-; CHECK:      target-flags(loongarch-gd-pc-hi) @t_un
-; CHECK-NEXT: target-flags(loongarch-got-pc-lo) @t_un
-; CHECK:      target-flags(loongarch-ld-pc-hi) @t_ld
-; CHECK-NEXT: target-flags(loongarch-got-pc-lo) @t_ld
+; SMALL:      target-flags(loongarch-gd-pc-hi) @t_un
+; SMALL-NEXT: target-flags(loongarch-got-pc-lo) @t_un
+; DESC:       target-flags(loongarch-desc-pc-hi) @t_un
+; DESC-NEXT:  target-flags(loongarch-desc-pc-lo) @t_un
+; DESC-NEXT:  target-flags(loongarch-desc-ld) @t_un
+; DESC-NEXT:  target-flags(loongarch-desc-call) @t_un
+; SMALL:      target-flags(loongarch-ld-pc-hi) @t_ld
+; SMALL-NEXT: target-flags(loongarch-got-pc-lo) @t_ld
+; DESC:       target-flags(loongarch-desc-pc-hi) @t_ld
+; DESC-NEXT:  target-flags(loongarch-desc-pc-lo) @t_ld
+; DESC-NEXT:  target-flags(loongarch-desc-ld) @t_ld
+; DESC-NEXT:  target-flags(loongarch-desc-call) @t_ld
 ; CHECK:      target-flags(loongarch-ie-pc-hi) @t_ie
 ; CHECK-NEXT: target-flags(loongarch-ie-pc-lo) @t_ie
 ; CHECK:      target-flags(loongarch-le-hi-r) @t_le
 ; CHECK-NEXT: target-flags(loongarch-le-add-r) @t_le
 ; CHECK-NEXT: target-flags(loongarch-le-lo-r) @t_le
 ; CHECK:      target-flags(loongarch-call-plt) @callee1
+; CALL36:     target-flags(loongarch-call36) @callee1
 ; CHECK:      target-flags(loongarch-call) @callee2
+; CALL36:     target-flags(loongarch-call36) @callee2
   %a = load volatile i32, ptr @g_e
   %b = load volatile i32, ptr @g_i
   %c = load volatile i32, ptr @t_un

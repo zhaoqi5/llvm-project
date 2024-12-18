@@ -27,7 +27,11 @@ static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,
   MCContext &Ctx = AP.OutContext;
   LoongArchMCExpr::VariantKind Kind;
 
-  switch (MO.getTargetFlags()) {
+  const unsigned DirectFlag =
+      MO.getTargetFlags() & LoongArchII::MO_DIRECT_FLAG_MASK;
+  const bool HasRelaxFlag = MO.getTargetFlags() & LoongArchII::MO_RELAX;
+
+  switch (DirectFlag) {
   default:
     llvm_unreachable("Unknown target flag on GV operand");
   case LoongArchII::MO_None:
@@ -134,7 +138,7 @@ static MCOperand lowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym,
         ME, MCConstantExpr::create(MO.getOffset(), Ctx), Ctx);
 
   if (Kind != LoongArchMCExpr::VK_LoongArch_None)
-    ME = LoongArchMCExpr::create(ME, Kind, Ctx);
+    ME = LoongArchMCExpr::create(ME, Kind, Ctx, HasRelaxFlag);
   return MCOperand::createExpr(ME);
 }
 
