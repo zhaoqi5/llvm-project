@@ -181,6 +181,76 @@ enum EdgeKind_loongarch : Edge::Kind {
   ///     out-of-range error will be returned.
   ///
   Call36PCRel,
+
+  /// low 6 bits label addition
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{1}Fixup + (Target + Addend) & 0x3f) : int8
+  ///
+  Add6,
+
+  /// 8 bits label addition
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + *{1}Fixup + Addend) : int8
+  ///
+  Add8,
+
+  /// 16 bits label addition
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + *{2}Fixup + Addend) : int16
+  ///
+  Add16,
+
+  /// 32 bits label addition
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + *{4}Fixup + Addend) : int32
+  ///
+  Add32,
+
+  /// 64 bits label addition
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (Target + *{8}Fixup + Addend) : int64
+  ///
+  Add64,
+
+  /// low 6 bits label subtraction
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{1}Fixup - (Target + Addend) & 0x3f) : int8
+  ///
+  Sub6,
+
+  /// 8 bits label subtraction
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{1}Fixup - Target - Addend) : int8
+  ///
+  Sub8,
+
+  /// 16 bits label subtraction
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{2}Fixup - Target - Addend) : int16
+  ///
+  Sub16,
+
+  /// 32 bits label subtraction
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{4}Fixup - Target - Addend) : int32
+  ///
+  Sub32,
+
+  /// 64 bits label subtraction
+  ///
+  /// Fixup expression:
+  ///   Fixup <- (*{8}Fixup - Target - Addend) : int64
+  ///
+  Sub64,
 };
 
 /// Returns a string name for the given loongarch edge. For debugging purposes
@@ -285,6 +355,66 @@ inline Error applyFixup(LinkGraph &G, Block &B, const Edge &E) {
     uint32_t Jirl = *(little32_t *)(FixupPtr + 4);
     uint32_t Lo16 = extractBits(Value, /*Hi=*/17, /*Lo=*/2) << 10;
     *(little32_t *)(FixupPtr + 4) = Jirl | Lo16;
+    break;
+  }
+  case Add6: {
+    int64_t Value = *(reinterpret_cast<const int8_t *>(FixupPtr));
+    Value += ((TargetAddress + Addend) & 0x3f);
+    *FixupPtr = (*FixupPtr & 0xc0) | (static_cast<int8_t>(Value) & 0x3f);
+    break;
+  }
+  case Add8: {
+    int64_t Value =
+        TargetAddress + *(reinterpret_cast<const int8_t *>(FixupPtr)) + Addend;
+    *FixupPtr = static_cast<int8_t>(Value);
+    break;
+  }
+  case Add16: {
+    int64_t Value =
+        TargetAddress + support::endian::read16le(FixupPtr) + Addend;
+    *(little16_t *)FixupPtr = static_cast<int16_t>(Value);
+    break;
+  }
+  case Add32: {
+    int64_t Value =
+        TargetAddress + support::endian::read32le(FixupPtr) + Addend;
+    *(little32_t *)FixupPtr = static_cast<int32_t>(Value);
+    break;
+  }
+  case Add64: {
+    int64_t Value =
+        TargetAddress + support::endian::read64le(FixupPtr) + Addend;
+    *(little64_t *)FixupPtr = static_cast<int64_t>(Value);
+    break;
+  }
+  case Sub6: {
+    int64_t Value = *(reinterpret_cast<const int8_t *>(FixupPtr));
+    Value -= ((TargetAddress + Addend) & 0x3f);
+    *FixupPtr = (*FixupPtr & 0xc0) | (static_cast<int8_t>(Value) & 0x3f);
+    break;
+  }
+  case Sub8: {
+    int64_t Value =
+        *(reinterpret_cast<const int8_t *>(FixupPtr)) - TargetAddress - Addend;
+    *FixupPtr = static_cast<int8_t>(Value);
+    break;
+  }
+  case Sub16: {
+    int64_t Value =
+        support::endian::read16le(FixupPtr) - TargetAddress - Addend;
+    *(little16_t *)FixupPtr = static_cast<int16_t>(Value);
+    break;
+  }
+  case Sub32: {
+    int64_t Value =
+        support::endian::read32le(FixupPtr) - TargetAddress - Addend;
+    *(little32_t *)FixupPtr = static_cast<int32_t>(Value);
+    break;
+  }
+  case Sub64: {
+    int64_t Value =
+        support::endian::read64le(FixupPtr) - TargetAddress - Addend;
+    *(little64_t *)FixupPtr = static_cast<int64_t>(Value);
     break;
   }
   default:
