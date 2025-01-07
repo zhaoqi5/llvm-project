@@ -597,6 +597,17 @@ llvm::Error Interpreter::CreateExecutor() {
     auto JTMB = createJITTargetMachineBuilder(TT);
     if (!JTMB)
       return JTMB.takeError();
+
+    if (llvm::Triple(TT).getArch() == llvm::Triple::loongarch64) {
+      std::vector<std::string> Features =
+          getCompilerInstance()->getTargetOpts().Features;
+      for (auto &Feature : Features)
+        if (Feature == "+relax") {
+          JTMB->getFeatures().AddFeature("relax", true);
+          break;
+        }
+    }
+
     auto JB = IncrementalExecutor::createDefaultJITBuilder(std::move(*JTMB));
     if (!JB)
       return JB.takeError();
