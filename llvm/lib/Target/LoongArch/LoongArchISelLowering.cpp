@@ -346,6 +346,10 @@ LoongArchTargetLowering::LoongArchTargetLowering(const TargetMachine &TM,
                          ISD::SETUGE, ISD::SETUGT},
                         VT, Expand);
     }
+    for (MVT VT : {MVT::v16i8, MVT::v8i16, MVT::v4i32}) {
+      setOperationAction(ISD::TRUNCATE, VT, Custom);
+      setOperationAction(ISD::EXTRACT_SUBVECTOR, VT, Legal);
+    }
   }
 
   // Set DAG combine for LA32 and LA64.
@@ -448,8 +452,60 @@ SDValue LoongArchTargetLowering::LowerOperation(SDValue Op,
     return lowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::BITREVERSE:
     return lowerBITREVERSE(Op, DAG);
+  case ISD::TRUNCATE:
+    return lowerTRUNCATE(Op, DAG);
   }
   return SDValue();
+}
+
+SDValue LoongArchTargetLowering::lowerTRUNCATE(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  MVT VT = Op.getSimpleValueType();
+  SDValue Src = Op.getOperand(0);
+  MVT SrcVT = Src.getSimpleValueType();
+  SDLoc DL(Op);
+
+  assert((VT == MVT::v4i32 || VT == MVT::v8i16 || VT == MVT::v16i8) &&
+         "Unexpected VT!");
+  assert((SrcVT == MVT::v4i64 || SrcVT == MVT::v8i32 || SrcVT == MVT::v16i16) &&
+         "Unexpected Src VT!");
+  assert(VT.getVectorNumElements() == SrcVT.getVectorNumElements() &&
+         "Invalid TRUNCATE operation!");
+
+  // SDValue HalfLo = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v2i64, Src, DAG.getConstant(0, DL, MVT::i64));
+  // SDValue HalfHi = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v2i64, Src, DAG.getConstant(2, DL, MVT::i64));
+  // HalfLo = DAG.getBitcast(MVT::v4i32, HalfLo);
+  // HalfHi = DAG.getBitcast(MVT::v4i32, HalfHi);
+  // int ShufMask[] = {0, 2, 4, 6};
+  // return DAG.getVectorShuffle(MVT::v4i32, DL, HalfLo, HalfHi, ShufMask);
+
+  MVT NewVT;
+  switch (SrcVT) {
+  default:
+    return SDValue();
+  case MVT::v4i64:
+    NewVT = MVT::v8i32;
+    break;
+  case MVT::v8i32:
+    NewVT = MVT::v16i16;
+    break;
+  case MVT::v16i16:
+    NewVT = MVT::v32i8;
+    break;
+  }
+
+  SDValue NewSrc = DAG.getBitcast(NewVT, Src);
+  // int ShufMask[] = {0, 2, 8, 10, 4, 6, 12, 14};
+  SmallVector<int, 64> ShufMask;
+  for (int i = 0; i < NewVT.getVectorNumElements() / 4; i++) {
+
+  }
+
+  NewSrc = DAG.getVectorShuffle(NewVT, DL, NewSrc, NewSrc, ShufMask);
+  NewSrc = DAG.getNode(LoongArchISD::XVPERMI, DL, MVT::v4i64, DAG.getBitcast(MVT::v4i64, NewSrc),
+                       DAG.getConstant(0b00100010, DL, MVT::i64));
+  return DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, VT, DAG.getBitcast(NewVT, NewSrc),
+                     DAG.getConstant(0, DL, MVT::i64));
 }
 
 SDValue LoongArchTargetLowering::lowerBITREVERSE(SDValue Op,

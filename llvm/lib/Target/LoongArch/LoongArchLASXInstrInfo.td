@@ -1749,6 +1749,29 @@ def : Pat<(f32 (vector_extract v8f32:$xj, uimm3:$imm)),
 def : Pat<(f64 (vector_extract v4f64:$xj, uimm2:$imm)),
           (MOVGR2FR_D (XVPICKVE2GR_D v4f64:$xj, uimm2:$imm))>;
 
+// def : Pat<(v16i8 (trunc (v16i16 LASX256:$src))),
+//           (v16i8 (EXTRACT_SUBREG (XVPERMI_D
+//                  (XVPICKEV_B LASX256:$src, LASX256:$src), 34), sub_128))>;
+// def : Pat<(v8i16 (trunc (v8i32 LASX256:$src))),
+//           (v8i16 (EXTRACT_SUBREG (XVPERMI_D
+//                  (XVPICKEV_H LASX256:$src, LASX256:$src), 34), sub_128))>;
+// def : Pat<(v4i32 (trunc (v4i64 LASX256:$src))),
+//           (v4i32 (EXTRACT_SUBREG (XVPERMI_D
+//                  (XVPICKEV_W LASX256:$src, LASX256:$src), 34), sub_128))>;
+
+def : Pat<(v16i8 (extract_subvector (v32i8 LASX256:$src), (iPTR 0))),
+          (v16i8 (EXTRACT_SUBREG (v32i8 LASX256:$src), sub_128))>;
+def : Pat<(v16i8 (extract_subvector (v32i8 LASX256:$src), (iPTR 16))),
+          (v16i8 (EXTRACT_SUBREG (XVPERMI_Q LASX256:$src, LASX256:$src, 1), sub_128))>;
+def : Pat<(v8i16 (extract_subvector (v16i16 LASX256:$src), (iPTR 0))),
+          (v8i16 (EXTRACT_SUBREG (v16i16 LASX256:$src), sub_128))>;
+def : Pat<(v8i16 (extract_subvector (v16i16 LASX256:$src), (iPTR 8))),
+          (v8i16 (EXTRACT_SUBREG (XVPERMI_Q LASX256:$src, LASX256:$src, 1), sub_128))>;
+def : Pat<(v4i32 (extract_subvector (v8i32 LASX256:$src), (iPTR 0))),
+          (v4i32 (EXTRACT_SUBREG (v8i32 LASX256:$src), sub_128))>;
+def : Pat<(v4i32 (extract_subvector (v8i32 LASX256:$src), (iPTR 4))),
+          (v4i32 (EXTRACT_SUBREG (XVPERMI_Q LASX256:$src, LASX256:$src, 1), sub_128))>;
+
 // vselect
 def : Pat<(v32i8 (vselect LASX256:$xd, (v32i8 (SplatPat_uimm8 uimm8:$imm)),
                           LASX256:$xj)),
