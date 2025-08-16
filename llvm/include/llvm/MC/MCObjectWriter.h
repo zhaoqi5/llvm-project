@@ -42,6 +42,8 @@ protected:
   bool EmitAddrsigSection = false;
   bool SubsectionsViaSymbols = false;
 
+  bool EnableRelax = false;
+
   struct CGProfileEntry {
     const MCSymbolRefExpr *From;
     const MCSymbolRefExpr *To;
@@ -55,6 +57,9 @@ public:
   MCObjectWriter(const MCObjectWriter &) = delete;
   MCObjectWriter &operator=(const MCObjectWriter &) = delete;
   virtual ~MCObjectWriter();
+
+  void setEnableRelax() { EnableRelax = true; }
+  bool getEnableRelax() const { return EnableRelax; }
 
   virtual void setAssembler(MCAssembler *A) { Asm = A; }
 

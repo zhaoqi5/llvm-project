@@ -204,6 +204,7 @@ bool LoongArchAsmBackend::relaxAlign(MCFragment &F, unsigned &Size) {
   // MaxBytesToEmit >= the nop size.
   if (!F.getSubtargetInfo()->hasFeature(LoongArch::FeatureRelax))
     return false;
+  Asm->getWriter().setEnableRelax();
   const unsigned MinNopLen = 4;
   unsigned MaxBytesToEmit = F.getAlignMaxBytesToEmit();
   if (MaxBytesToEmit < MinNopLen)
@@ -489,8 +490,7 @@ bool LoongArchAsmBackend::addReloc(const MCFragment &F, const MCFixup &Fixup,
 
 std::unique_ptr<MCObjectTargetWriter>
 LoongArchAsmBackend::createObjectTargetWriter() const {
-  return createLoongArchELFObjectWriter(
-      OSABI, Is64Bit, STI.hasFeature(LoongArch::FeatureRelax));
+  return createLoongArchELFObjectWriter(OSABI, Is64Bit);
 }
 
 MCAsmBackend *llvm::createLoongArchAsmBackend(const Target &T,

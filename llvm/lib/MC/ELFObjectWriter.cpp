@@ -1293,6 +1293,9 @@ bool ELFObjectWriter::useSectionSymbol(const MCValue &Val,
       return false;
   }
 
+  if (Asm->getWriter().getEnableRelax())
+    return false;
+
   return !TargetObjectWriter->needsRelocateWithSymbol(Val, Type);
 }
 
