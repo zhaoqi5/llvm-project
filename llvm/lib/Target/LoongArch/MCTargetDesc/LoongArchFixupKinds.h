@@ -26,6 +26,9 @@ enum Fixups {
   fixup_loongarch_b21,
   // 26-bit fixup corresponding to %b26(foo)/%plt(foo) for instructions b/bl.
   fixup_loongarch_b26,
+  // Fixup representing a function call attached to the pcaddu18i instruction in
+  // a pair composed of adjacent pcaddu18i+jirl instructions.
+  fixup_loongarch_call36,
   // 20-bit fixup corresponding to %abs_hi20(foo) for instruction lu12i.w.
   fixup_loongarch_abs_hi20,
   // 12-bit fixup corresponding to %abs_lo12(foo) for instruction ori.

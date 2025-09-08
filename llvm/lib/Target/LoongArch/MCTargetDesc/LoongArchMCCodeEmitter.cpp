@@ -104,6 +104,7 @@ static void addFixup(SmallVectorImpl<MCFixup> &Fixups, uint32_t Offset,
   case LoongArch::fixup_loongarch_b16:
   case LoongArch::fixup_loongarch_b21:
   case LoongArch::fixup_loongarch_b26:
+  case LoongArch::fixup_loongarch_call36:
     PCRel = true;
   }
   Fixups.push_back(MCFixup::create(Offset, Value, Kind, PCRel));
@@ -174,6 +175,9 @@ LoongArchMCCodeEmitter::getExprOpValue(const MCInst &MI, const MCOperand &MO,
       FixupKind = LoongArch::fixup_loongarch_abs64_hi12;
       break;
     case ELF::R_LARCH_CALL36:
+      FixupKind = LoongArch::fixup_loongarch_call36;
+      RelaxCandidate = true;
+      break;
     case ELF::R_LARCH_TLS_LE_HI20_R:
     case ELF::R_LARCH_TLS_LE_LO12_R:
       RelaxCandidate = true;

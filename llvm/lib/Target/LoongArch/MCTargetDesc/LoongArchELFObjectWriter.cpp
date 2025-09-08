@@ -88,6 +88,8 @@ unsigned LoongArchELFObjectWriter::getRelocType(const MCFixup &Fixup,
     return ELF::R_LARCH_B21;
   case LoongArch::fixup_loongarch_b26:
     return ELF::R_LARCH_B26;
+  case LoongArch::fixup_loongarch_call36:
+    return ELF::R_LARCH_CALL36;
   case LoongArch::fixup_loongarch_abs_hi20:
     return ELF::R_LARCH_ABS_HI20;
   case LoongArch::fixup_loongarch_abs_lo12:

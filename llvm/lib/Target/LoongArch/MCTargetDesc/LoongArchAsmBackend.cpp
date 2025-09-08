@@ -60,6 +60,7 @@ MCFixupKindInfo LoongArchAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
       {"fixup_loongarch_b16", 10, 16, 0},
       {"fixup_loongarch_b21", 0, 26, 0},
       {"fixup_loongarch_b26", 0, 26, 0},
+      {"fixup_loongarch_call36", 0, 64, 1 << 0},
       {"fixup_loongarch_abs_hi20", 5, 20, 0},
       {"fixup_loongarch_abs_lo12", 10, 12, 0},
       {"fixup_loongarch_abs64_lo20", 5, 20, 0},
@@ -119,6 +120,15 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
     if (Value % 4)
       Ctx.reportError(Fixup.getLoc(), "fixup value must be 4-byte aligned");
     return ((Value & 0x3fffc) << 8) | ((Value >> 18) & 0x3ff);
+  }
+  case LoongArch::fixup_loongarch_call36: {
+    if (!isInt<38>(Value + 0x20000))
+      reportOutOfRangeError(Ctx, Fixup.getLoc(), 38);
+    if (Value % 4)
+      Ctx.reportError(Fixup.getLoc(), "fixup value must be 4-byte aligned");
+    uint64_t Hi = (Value + 0x20000) & 0x3ffffc0000ULL;
+    uint64_t Lo = Value & 0x3fffcULL;
+    return (Hi >> 13) | ((Lo << 8) << 32);
   }
   case LoongArch::fixup_loongarch_abs_hi20:
     return (Value >> 12) & 0xfffff;
