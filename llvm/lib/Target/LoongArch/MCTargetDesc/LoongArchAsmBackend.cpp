@@ -60,7 +60,12 @@ MCFixupKindInfo LoongArchAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
       {"fixup_loongarch_b16", 10, 16, 0},
       {"fixup_loongarch_b21", 0, 26, 0},
       {"fixup_loongarch_b26", 0, 26, 0},
-      {"fixup_loongarch_call36", 0, 64, 1 << 0},
+      // In fact, a call36 fixup should cover 64 bits starting at offset 0
+      // (ie. the pcaddu18i+jirl pair). However, we only record the fixup
+      // location of pcaddu18i here so that MCAsmStreamer '-show-encoding' can
+      // print the encoding correctly. The exact offset and bits should be
+      // manually handled in LoongArchAsmBackend::applyFixup.
+      {"fixup_loongarch_call36", 5, 20, 0},
       {"fixup_loongarch_abs_hi20", 5, 20, 0},
       {"fixup_loongarch_abs_lo12", 10, 12, 0},
       {"fixup_loongarch_abs64_lo20", 5, 20, 0},
@@ -171,9 +176,13 @@ void LoongArchAsmBackend::applyFixup(const MCFragment &F, const MCFixup &Fixup,
   Value = adjustFixupValue(Fixup, Value, Ctx);
 
   // Shift the value into position.
-  Value <<= Info.TargetOffset;
+  bool IsFixupCall36 = Fixup.getKind() == LoongArch::fixup_loongarch_call36;
+  if (!IsFixupCall36)
+    Value <<= Info.TargetOffset;
 
-  unsigned NumBytes = alignTo(Info.TargetSize + Info.TargetOffset, 8) / 8;
+  unsigned NumBytes =
+      alignTo((IsFixupCall36 ? 64 : (Info.TargetSize + Info.TargetOffset)), 8) /
+      8;
 
   assert(Fixup.getOffset() + NumBytes <= F.getSize() &&
          "Invalid fixup offset!");

@@ -2355,12 +2355,8 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst,
     MCFixup &F = Fixups[i];
     MCFixupKindInfo Info =
         getAssembler().getBackend().getFixupKindInfo(F.getKind());
-    bool IsLACall36 = getContext().getTargetTriple().isLoongArch() &&
-                      F.getKind() >= FirstTargetFixupKind &&
-                      Info.Flags == (1 << 0);
-    for (unsigned j = 0; j != (IsLACall36 ? 20 : Info.TargetSize); ++j) {
-      unsigned Index =
-          F.getOffset() * 8 + (IsLACall36 ? 5 : Info.TargetOffset) + j;
+    for (unsigned j = 0; j != Info.TargetSize; ++j) {
+      unsigned Index = F.getOffset() * 8 + Info.TargetOffset + j;
       assert(Index < Code.size() * 8 && "Invalid offset in fixup!");
       FixupMap[Index] = 1 + i;
     }
